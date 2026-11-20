@@ -1,48 +1,57 @@
-import { Menu } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { Bell, ChevronRight, Search } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet'
-import { navItems } from '@/config/navigation'
+import { Input } from '@/components/ui/input'
+import { routeTitles } from '@/config/navigation'
 
 export function Header() {
+  const { pathname } = useLocation()
+  const parts = pathname.split('/').filter(Boolean)
+  const crumbs = parts.map((p, i) => ({
+    label: routeTitles[p] ?? 'Detalhes',
+    to: '/' + parts.slice(0, i + 1).join('/'),
+  }))
+
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b px-4 md:px-6">
-      <Sheet>
-        <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="md:hidden" aria-label="Abrir menu">
-            <Menu className="size-5" />
-          </Button>
-        </SheetTrigger>
-        <SheetContent side="left" className="w-64">
-          <SheetHeader>
-            <SheetTitle>Orçamento na Hora</SheetTitle>
-          </SheetHeader>
-          <nav className="flex flex-col gap-1 px-3">
-            {navItems.map(({ label, to, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === '/'}
-                className="hover:bg-accent flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium"
-              >
-                <Icon className="size-4" />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
-        </SheetContent>
-      </Sheet>
-      <div className="ml-auto">
+    <header className="bg-card flex h-16 shrink-0 items-center gap-6 border-b px-8">
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+        <Link to="/" className="text-muted-foreground hover:text-foreground">
+          Início
+        </Link>
+        {crumbs.map((c, i) => (
+          <span key={c.to} className="flex items-center gap-1.5">
+            <ChevronRight className="text-muted-foreground size-3.5" />
+            {i === crumbs.length - 1 ? (
+              <span className="font-medium" aria-current="page">{c.label}</span>
+            ) : (
+              <Link to={c.to} className="text-muted-foreground hover:text-foreground">
+                {c.label}
+              </Link>
+            )}
+          </span>
+        ))}
+      </nav>
+      <div className="ml-auto flex items-center gap-4">
+        <div className="relative w-80">
+          <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            type="search"
+            aria-label="Pesquisa global"
+            placeholder="Buscar orçamentos, clientes, itens..."
+            className="bg-background pl-9"
+          />
+        </div>
+        <button
+          type="button"
+          aria-label="Notificações"
+          className="text-muted-foreground hover:bg-accent relative rounded-md p-2 transition-colors"
+        >
+          <Bell className="size-5" />
+          <span className="bg-primary absolute top-1.5 right-1.5 size-2 rounded-full" />
+        </button>
         <Avatar>
-          <AvatarFallback>ON</AvatarFallback>
+          <AvatarFallback className="bg-sidebar text-xs font-semibold text-white">RS</AvatarFallback>
         </Avatar>
       </div>
     </header>
