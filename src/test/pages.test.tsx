@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { installFakeApi } from './fakeApi'
+import { installFakeApi, makeDb } from './fakeApi'
 import { renderApp } from './utils'
 
 afterEach(() => {
@@ -239,26 +239,132 @@ describe('clientes', () => {
 })
 
 describe('whatsapp', () => {
-  it('conecta e desconecta com confirmação', async () => {
+  it('valida o formulário e conecta pela API', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/whatsapp')
+    expect(await screen.findByText('Conecte seu WhatsApp Business')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Conectar WhatsApp/ }))
+    expect(screen.getByText(/Informe o Phone number ID/)).toBeInTheDocument()
+    expect(screen.getByText('Informe o token de acesso.')).toBeInTheDocument()
+
+    await userEvent.type(screen.getByLabelText('Phone number ID'), '100200300400')
+    await userEvent.type(screen.getByLabelText('WhatsApp Business Account ID'), '999888777')
+    await userEvent.type(screen.getByLabelText('Token de acesso'), 'EAAG-token-de-teste-com-mais-de-vinte')
+    await userEvent.click(screen.getByRole('button', { name: /Conectar WhatsApp/ }))
+
+    expect(await screen.findByText('Conexão ativa')).toBeInTheDocument()
+    expect(screen.getByText('+55 11 4000-0000')).toBeInTheDocument()
+    const put = calls.find((c) => c.method === 'PUT' && c.path.endsWith('/whatsapp/connection'))!
+    expect(put.body).toEqual({ phoneNumberId: '100200300400', wabaId: '999888777', accessToken: 'EAAG-token-de-teste-com-mais-de-vinte' })
+    // o token nunca é exibido de volta
+    expect(screen.queryByText(/EAAG-token/)).not.toBeInTheDocument()
+  })
+
+  it('mostra o erro da Meta quando o token é recusado', async () => {
     installFakeApi()
     renderApp('/whatsapp')
-    expect(await screen.findByText(/não estão disponíveis/)).toBeInTheDocument()
+    await userEvent.type(await screen.findByLabelText('Phone number ID'), '100200300400')
+    await userEvent.type(screen.getByLabelText('WhatsApp Business Account ID'), '999888777')
+    await userEvent.type(screen.getByLabelText('Token de acesso'), 'token-invalido-com-mais-de-vinte-chars')
     await userEvent.click(screen.getByRole('button', { name: /Conectar WhatsApp/ }))
+    expect(await screen.findByText(/A Meta recusou o token/)).toBeInTheDocument()
+  })
+
+  it('desconecta com confirmação', async () => {
+    const db = makeDb()
+    db.whatsapp.connection = { phoneNumberId: '100200300400', wabaId: '999888777', displayPhone: '+55 11 4000-0000', verifiedName: 'Acme' }
+    installFakeApi(db)
+    renderApp('/whatsapp')
     expect(await screen.findByText('Conexão ativa')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Desconectar' }))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Desconectar' }))
-    expect(await screen.findByText('Conecte seu WhatsApp')).toBeInTheDocument()
+    expect(await screen.findByText('Conecte seu WhatsApp Business')).toBeInTheDocument()
+    expect(db.whatsapp.connection).toBeNull()
   })
 })
 
-describe('conversas', () => {
-  it('sinaliza módulo futuro e permite enviar mensagem de exemplo', async () => {
+describe('conversas (inbox)', () => {
+  it('lista conversas, abre a primeira e marca como lida', async () => {
+    const { calls, db } = installFakeApi()
+    renderApp('/conversas')
+    const list = await screen.findByRole('region', { name: 'Lista de conversas' })
+    expect(await within(list).findByText('Carlos')).toBeInTheDocument()
+    expect(within(list).getByLabelText('2 não lidas')).toBeInTheDocument()
+    expect(await screen.findByText('Bom dia! Preciso de um orçamento.')).toBeInTheDocument()
+    expect(screen.getByText(/Lida/)).toBeInTheDocument()
+    await waitFor(() => expect(db.conversations[0].unreadCount).toBe(0))
+    expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/v1/read'))).toBe(true)
+  })
+
+  it('troca de conversa e mostra o painel do cliente vinculado', async () => {
     installFakeApi()
     renderApp('/conversas')
-    expect(await screen.findByText(/Módulo futuro/)).toBeInTheDocument()
-    await userEvent.type(screen.getByLabelText('Mensagem'), 'Olá, tudo bem?')
+    const aside = await screen.findByRole('complementary', { name: 'Informações do cliente' })
+    expect(await within(aside).findByRole('link', { name: 'Gerar orçamento' })).toBeInTheDocument()
+    expect(await within(aside).findByText('ORC-0001')).toBeInTheDocument()
+
+    await userEvent.click(within(screen.getByRole('region', { name: 'Lista de conversas' })).getByText('Carlos'))
+    expect(await screen.findByText('Obrigado, vou analisar.', { selector: 'span.break-words' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Cadastrar como cliente/ })).toBeInTheDocument()
+  })
+
+  it('envia mensagem pela API', async () => {
+    const db = makeDb()
+    db.whatsapp.connection = { phoneNumberId: '1', wabaId: '2', displayPhone: '+55', verifiedName: 'A' }
+    const { calls } = installFakeApi(db)
+    renderApp('/conversas')
+    await userEvent.type(await screen.findByLabelText('Mensagem'), 'Segue o valor')
     await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
-    expect(screen.getAllByText(/Olá, tudo bem\?/).length).toBeGreaterThan(0)
+    expect(await screen.findByText('Segue o valor', { selector: 'span.break-words' })).toBeInTheDocument()
+    const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/v1/messages'))!
+    expect(post.body).toEqual({ text: 'Segue o valor' })
+    expect(screen.getByLabelText('Mensagem')).toHaveValue('')
+  })
+
+  it('mostra o erro do servidor quando o envio falha', async () => {
+    installFakeApi() // sem conexão: a API responde 409
+    renderApp('/conversas')
+    await userEvent.type(await screen.findByLabelText('Mensagem'), 'Olá')
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    expect(await screen.findByText('Conecte o WhatsApp antes de enviar mensagens')).toBeInTheDocument()
+    expect(screen.getByLabelText('Mensagem')).toHaveValue('Olá')
+  })
+
+  it('cadastra a conversa como cliente e vincula', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/conversas')
+    await userEvent.click(await within(await screen.findByRole('region', { name: 'Lista de conversas' })).findByText('Carlos'))
+    await userEvent.click(await screen.findByRole('button', { name: /Cadastrar como cliente/ }))
+    expect((await screen.findAllByRole('link', { name: 'Gerar orçamento' })).length).toBeGreaterThan(0)
+    expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/v2/customer'))).toBe(true)
+  })
+
+  it('vincula a um cliente existente pela busca', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/conversas')
+    await userEvent.click(await within(await screen.findByRole('region', { name: 'Lista de conversas' })).findByText('Carlos'))
+    await userEvent.type(await screen.findByLabelText('Buscar cliente para vincular'), 'Carlos')
+    await userEvent.click(await screen.findByRole('button', { name: /Carlos Pereira/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH' && c.path.endsWith('/v2'))).toBe(true))
+    expect(calls.find((c) => c.method === 'PATCH')!.body).toEqual({ customerId: 'c2' })
+  })
+
+  it('"Gerar orçamento" leva ao gerador com o cliente já selecionado', async () => {
+    installFakeApi()
+    const router = renderApp('/conversas')
+    await userEvent.click((await screen.findAllByRole('link', { name: 'Gerar orçamento' }))[0])
+    await waitFor(() => expect(router.state.location.pathname).toBe('/orcamentos/novo'))
+    expect(await screen.findByText('Marina Costa')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Trocar' })).toBeInTheDocument()
+  })
+
+  it('filtra conversas pela busca', async () => {
+    installFakeApi()
+    renderApp('/conversas')
+    const list = await screen.findByRole('region', { name: 'Lista de conversas' })
+    await within(list).findByText('Carlos')
+    await userEvent.type(screen.getByLabelText('Buscar conversa'), 'Carlos')
+    await waitFor(() => expect(within(list).queryByText('Marina Costa')).not.toBeInTheDocument())
   })
 })
 

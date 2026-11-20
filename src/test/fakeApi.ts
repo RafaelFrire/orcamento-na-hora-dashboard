@@ -25,7 +25,19 @@ export function makeDb() {
     { id: 'q2', number: 2, customerId: 'c2', customer: { id: 'c2', name: 'Carlos Pereira', phone: null, email: null }, notes: null, total: '3850.00', createdAt: '2026-11-16T12:00:00.000Z', validUntil: '2026-12-01T12:00:00.000Z', issuer: null, itemsCount: 2 },
     { id: 'q1', number: 1, customerId: 'c1', customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: null }, notes: 'Obs', total: '660.00', createdAt: '2026-11-10T12:00:00.000Z', validUntil: '2026-11-25T12:00:00.000Z', issuer: null, itemsCount: 1 },
   ]
-  return { customers, segments, categories, items, quotes }
+  const conversations = [
+    { id: 'v1', waContactId: '5511987654321', contactName: 'Marina Costa', lastMessageAt: '2026-11-20T13:42:00.000Z', lastMessageText: 'Perfeito, pode enviar o orçamento!', unreadCount: 2, customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina@costaarq.com.br' } },
+    { id: 'v2', waContactId: '5521999990000', contactName: 'Carlos', lastMessageAt: '2026-11-19T16:20:00.000Z', lastMessageText: 'Obrigado, vou analisar.', unreadCount: 0, customer: null as null | { id: string; name: string; phone: string | null; email: string | null } },
+  ]
+  const messages: Record<string, Array<{ id: string; direction: 'IN' | 'OUT'; type: string; body: string; status: string; errorMessage: null; sentAt: string }>> = {
+    v1: [
+      { id: 'm1', direction: 'IN', type: 'text', body: 'Bom dia! Preciso de um orçamento.', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:30:00.000Z' },
+      { id: 'm2', direction: 'OUT', type: 'text', body: 'Qual a metragem?', status: 'READ', errorMessage: null, sentAt: '2026-11-20T13:35:00.000Z' },
+    ],
+    v2: [{ id: 'm3', direction: 'IN', type: 'text', body: 'Obrigado, vou analisar.', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-19T16:20:00.000Z' }],
+  }
+  const whatsapp = { connection: null as null | { phoneNumberId: string; wabaId: string; displayPhone: string; verifiedName: string } }
+  return { customers, segments, categories, items, quotes, conversations, messages, whatsapp }
 }
 
 type Db = ReturnType<typeof makeDb>
@@ -115,6 +127,52 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
     if (p === '/quote-template' && method === 'GET')
       return json({ template: { companyName: 'Acme Serviços', document: null, phone: null, email: null, address: null, website: null, primaryColor: '#1F4E79', commercialTerms: 'Pagamento em 2x', footerText: null, validityDays: 15, isDefault: true } })
     if (p === '/quote-template' && method === 'PUT') return json({ template: body })
+
+    // --- WhatsApp ---
+    const webhook = { path: '/api/webhooks/whatsapp', verifyTokenConfigured: true, appSecretConfigured: true }
+    if (p === '/whatsapp/connection' && method === 'GET')
+      return json({ connection: { connected: !!db.whatsapp.connection, ...(db.whatsapp.connection ?? {}), webhook } })
+    if (p === '/whatsapp/connection' && method === 'PUT') {
+      if (body.accessToken.includes('invalido')) return err(502, 'INTERNAL', 'A Meta recusou o token de acesso. Reconecte o WhatsApp com um token válido')
+      db.whatsapp.connection = { phoneNumberId: body.phoneNumberId, wabaId: body.wabaId, displayPhone: '+55 11 4000-0000', verifiedName: 'Acme Serviços' }
+      return json({ connection: { connected: true, ...db.whatsapp.connection, webhook } })
+    }
+    if (p === '/whatsapp/connection' && method === 'DELETE') {
+      db.whatsapp.connection = null
+      return json(null, 204)
+    }
+    if (p === '/whatsapp/conversations' && method === 'GET') {
+      const term = q
+      return json(page(db.conversations.filter((c) => !term || (c.contactName ?? '').toLowerCase().includes(term) || (c.customer?.name ?? '').toLowerCase().includes(term))))
+    }
+    const mm = p.match(/^\/whatsapp\/conversations\/([^/]+)\/messages$/)
+    if (mm && method === 'GET') return json({ data: db.messages[mm[1]] ?? [], hasMore: false })
+    if (mm && method === 'POST') {
+      if (!db.whatsapp.connection) return err(409, 'CONFLICT', 'Conecte o WhatsApp antes de enviar mensagens')
+      const msg = { id: `m${Date.now()}`, direction: 'OUT' as const, type: 'text', body: body.text, status: 'SENT', errorMessage: null, sentAt: '2026-11-20T14:00:00.000Z' }
+      db.messages[mm[1]].push(msg)
+      const conv = db.conversations.find((c) => c.id === mm[1])!
+      conv.lastMessageText = body.text
+      return json({ message: msg }, 201)
+    }
+    const rm = p.match(/^\/whatsapp\/conversations\/([^/]+)\/read$/)
+    if (rm) {
+      const conv = db.conversations.find((c) => c.id === rm[1])
+      if (conv) conv.unreadCount = 0
+      return json(null, 204)
+    }
+    const km = p.match(/^\/whatsapp\/conversations\/([^/]+)\/customer$/)
+    if (km && method === 'POST') {
+      const conv = db.conversations.find((c) => c.id === km[1])!
+      conv.customer = { id: 'cnew', name: conv.contactName ?? 'Novo', phone: `+${conv.waContactId}`, email: null }
+      return json({ conversation: conv }, 201)
+    }
+    const lm = p.match(/^\/whatsapp\/conversations\/([^/]+)$/)
+    if (lm && method === 'PATCH') {
+      const conv = db.conversations.find((c) => c.id === lm[1])!
+      conv.customer = body.customerId ? (db.customers.find((c) => c.id === body.customerId) ?? null) : null
+      return json({ conversation: conv })
+    }
 
     return err(404, 'NOT_FOUND', `Sem handler: ${method} ${p}`)
   })

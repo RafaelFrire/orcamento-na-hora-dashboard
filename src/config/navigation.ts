@@ -22,7 +22,7 @@ export const navItems: NavItem[] = [
   { label: 'Clientes', to: '/clientes', icon: Users },
   { label: 'Catálogo', to: '/catalogo', icon: Package },
   { label: 'WhatsApp', to: '/whatsapp', icon: MessageCircle },
-  { label: 'Conversas', to: '/conversas', icon: MessagesSquare, badge: 'Em breve' },
+  { label: 'Conversas', to: '/conversas', icon: MessagesSquare },
   { label: 'Configurações', to: '/configuracoes', icon: Settings },
 ]
 

@@ -51,3 +51,12 @@ export const initials = (name?: string | null) =>
     .slice(0, 2)
     .join('')
     .toUpperCase() || '?'
+
+/** Hora (HH:mm) se for hoje; senão dd/MM. */
+export const formatMessageTime = (iso: string) => {
+  const d = new Date(iso)
+  const day = (x: Date) => x.toLocaleDateString('pt-BR', { timeZone: TZ })
+  return day(d) === day(new Date())
+    ? d.toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })
+    : day(d).slice(0, 5)
+}

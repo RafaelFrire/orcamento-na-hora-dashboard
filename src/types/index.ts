@@ -112,12 +112,36 @@ export interface WhatsappShare {
   url: string
 }
 
-// --- Módulo futuro (Conversas): ainda sem API, usa dados de exemplo. ---
+// --- WhatsApp (Cloud API via backend) ---
+export interface WhatsappConnection {
+  connected: boolean
+  phoneNumberId?: string
+  wabaId?: string
+  displayPhone?: string | null
+  verifiedName?: string | null
+  webhook: { path: string; verifyTokenConfigured: boolean; appSecretConfigured: boolean }
+}
+
+export type ConversationCustomer = Pick<Customer, 'id' | 'name' | 'phone' | 'email'>
+
 export interface Conversation {
   id: string
-  clientId: string
-  lastMessage: string
-  time: string
-  unread: number
-  messages: { id: string; from: 'me' | 'them'; text: string; time: string }[]
+  waContactId: string
+  contactName: string | null
+  lastMessageAt: string
+  lastMessageText: string | null
+  unreadCount: number
+  customer: ConversationCustomer | null
+}
+
+export type MessageStatus = 'RECEIVED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'
+
+export interface Message {
+  id: string
+  direction: 'IN' | 'OUT'
+  type: string
+  body: string | null
+  status: MessageStatus
+  errorMessage: string | null
+  sentAt: string
 }

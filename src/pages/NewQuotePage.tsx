@@ -16,7 +16,7 @@ import { catalogService } from '@/services/catalog'
 import { customersService } from '@/services/customers'
 import { quotesService } from '@/services/quotes'
 import { templateService } from '@/services/template'
-import type { CatalogItem, Customer, Quote } from '@/types'
+import type { CatalogItem, ConversationCustomer, Quote } from '@/types'
 
 interface DraftItem {
   key: string
@@ -43,8 +43,8 @@ function SectionCard({ step, title, children }: { step: number; title: string; c
 
 export default function NewQuotePage() {
   const actions = useQuoteActions()
-  const preset = (useLocation().state as { customer?: Customer } | null)?.customer ?? null
-  const [client, setClient] = useState<Customer | null>(preset)
+  const preset = (useLocation().state as { customer?: ConversationCustomer } | null)?.customer ?? null
+  const [client, setClient] = useState<ConversationCustomer | null>(preset)
   const [clientQuery, setClientQuery] = useState('')
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [catalogQuery, setCatalogQuery] = useState('')

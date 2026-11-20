@@ -11,7 +11,7 @@ export function errorMessage(e: unknown) {
  * Carrega dados assíncronos. Refaz a busca quando `deps` mudam e descarta
  * respostas de requisições antigas. `reload()` força nova busca.
  */
-export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
+export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[] = [], options: { pollMs?: number } = {}) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [settledKey, setSettledKey] = useState<string | null>(null)
@@ -41,6 +41,25 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
         if (id === seq.current) setSettledKey(key)
       })
   }, [key])
+
+  // Atualização periódica silenciosa (sem voltar ao estado de loading). Desligada nos testes.
+  const { pollMs } = options
+  useEffect(() => {
+    if (!pollMs || import.meta.env.MODE === 'test') return
+    const timer = setInterval(() => {
+      if (document.hidden) return
+      const id = seq.current
+      fetcherRef
+        .current()
+        .then((d) => {
+          if (id === seq.current) setData(d)
+        })
+        .catch(() => {
+          /* falhas pontuais de rede não derrubam a tela; a próxima tentativa corrige */
+        })
+    }, pollMs)
+    return () => clearInterval(timer)
+  }, [pollMs, key])
 
   const reload = useCallback(() => setTick((n) => n + 1), [])
   return { data, error, loading, reload }

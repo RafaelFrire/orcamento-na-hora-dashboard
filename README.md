@@ -25,10 +25,10 @@ Copie `.env.example` para `.env` se precisar mudar algo:
 A sessão (JWT + empresa ativa) fica no `localStorage`; um 401 em rota protegida encerra a sessão.
 
 ### O que vem da API
-Login/cadastro, clientes, catálogo (segmentos, categorias, itens), orçamentos (criar, listar, detalhe, PDF, link do WhatsApp) e modelo de orçamento (Configurações).
+Login/cadastro, clientes, catálogo (segmentos, categorias, itens), orçamentos (criar, listar, detalhe, PDF, link do WhatsApp) e modelo de orçamento (Configurações), conexão com o WhatsApp Business (Cloud API) e a Inbox de conversas (lista, histórico, envio, vínculo com clientes). A integração com a Meta fica toda na API; o front só chama os endpoints.
 
 ### Ainda sem backend (não integrado)
-Status/aprovação, edição, duplicação e exclusão de orçamentos; desconto e condições de pagamento por orçamento; conversas e conexão do WhatsApp (módulos futuros, com dados de exemplo); edição de perfil/senha e plano.
+Status/aprovação, edição, duplicação e exclusão de orçamentos; desconto e condições de pagamento por orçamento; geração de orçamento por IA a partir da conversa e extensão do Chrome (próximas etapas); edição de perfil/senha e plano.
 
 ## Estrutura
 ```
