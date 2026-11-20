@@ -5,10 +5,12 @@ import { Logo } from '@/components/shared/Logo'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { navItems } from '@/config/navigation'
 import { cn } from '@/lib/utils'
-import { currentUser } from '@/mocks/data'
+import { useAuth } from '@/contexts/AuthContext'
+import { initials } from '@/lib/format'
 
 export function Sidebar() {
   const navigate = useNavigate()
+  const { user, membership, logout } = useAuth()
   return (
     <aside
       className="bg-sidebar text-sidebar-foreground flex w-60 shrink-0 flex-col"
@@ -48,11 +50,11 @@ export function Sidebar() {
         <div className="flex items-center gap-3 rounded-md p-2">
           <Avatar className="size-9">
             <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
-              RS
+              {initials(user?.name)}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">{currentUser.company}</p>
+            <p className="truncate text-sm font-medium text-white">{membership?.name ?? user?.name}</p>
             <NavLink to="/configuracoes" className="text-sidebar-foreground/60 hover:text-gold-soft text-xs">
               Meu perfil
             </NavLink>
@@ -60,7 +62,10 @@ export function Sidebar() {
           <button
             type="button"
             aria-label="Sair"
-            onClick={() => navigate('/login')}
+            onClick={async () => {
+              await logout()
+              navigate('/login')
+            }}
             className="text-sidebar-foreground/60 hover:bg-sidebar-accent rounded-md p-2 transition-colors hover:text-white"
           >
             <LogOut className="size-4" />

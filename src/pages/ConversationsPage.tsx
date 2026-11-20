@@ -6,10 +6,9 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { formatCurrency, quoteTotal } from '@/lib/format'
+import { formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { conversations as seed } from '@/mocks/data'
-import { clientQuotes, getClient } from '@/mocks/store'
+import { conversations as seed, getContact } from '@/mocks/conversations'
 import type { Conversation } from '@/types'
 
 const initials = (n: string) => n.split(' ').map((p) => p[0]).slice(0, 2).join('')
@@ -21,8 +20,8 @@ export default function ConversationsPage() {
   const [text, setText] = useState('')
 
   const active = convs.find((c) => c.id === activeId)!
-  const client = getClient(active.clientId)!
-  const list = convs.filter((c) => getClient(c.clientId)?.name.toLowerCase().includes(search.toLowerCase()))
+  const client = getContact(active.clientId)!
+  const list = convs.filter((c) => getContact(c.clientId)?.name.toLowerCase().includes(search.toLowerCase()))
 
   function send(e: FormEvent) {
     e.preventDefault()
@@ -55,7 +54,7 @@ export default function ConversationsPage() {
           </div>
           <ul className="flex-1 overflow-y-auto">
             {list.map((c) => {
-              const cl = getClient(c.clientId)!
+              const cl = getContact(c.clientId)!
               return (
                 <li key={c.id}>
                   <button type="button" onClick={() => setActiveId(c.id)} className={cn('hover:bg-accent/60 flex w-full items-center gap-3 p-3 text-left', c.id === activeId && 'bg-accent')}>
@@ -100,7 +99,7 @@ export default function ConversationsPage() {
           <div>
             <p className="mb-2 font-medium">Orçamentos</p>
             <ul className="text-muted-foreground space-y-1 text-xs">
-              {clientQuotes(client.id).map((q) => <li key={q.id} className="flex justify-between"><span>{q.number}</span><span>{formatCurrency(quoteTotal(q))}</span></li>)}
+              {client.quotes.map((q) => <li key={q.id} className="flex justify-between"><span>{q.number}</span><span>{formatCurrency(q.total)}</span></li>)}
             </ul>
           </div>
           <Button asChild className="w-full"><Link to="/orcamentos/novo">Gerar orçamento</Link></Button>

@@ -2,6 +2,7 @@ import { MoreHorizontal, Package, Pencil, Search, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { ErrorNotice, Pager } from '@/components/shared/Pager'
 import { EmptyState, TableSkeleton } from '@/components/shared/States'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -11,54 +12,141 @@ import { Field, Select, Textarea } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table'
 import { useToast } from '@/components/ui/toast'
-import { useMockLoad } from '@/hooks/useMockLoad'
-import { formatCurrency } from '@/lib/format'
+import { useAuth } from '@/contexts/AuthContext'
+import { errorMessage, useApi, useDebounced } from '@/hooks/useApi'
+import { formatCurrency, unitCodes, unitLabel } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { db } from '@/mocks/store'
+import { ApiError } from '@/services/api'
+import { catalogService } from '@/services/catalog'
 import type { CatalogItem } from '@/types'
 
-const categories = ['Serviços', 'Produtos', 'Projetos', 'Contratos']
-const units = ['un', 'hora', 'm²', 'ponto', 'mês']
-const blank = { name: '', description: '', category: 'Serviços', price: '', unit: 'un', active: true }
+const blank = { name: '', description: '', segmentId: '', categoryId: '', price: '', unit: 'UN', active: true }
+
+/** "49,9" ou "49.90" -> "49.90" (formato decimal exigido pela API); null se inválido. */
+function toPriceString(raw: string) {
+  const n = Number(raw.replace(',', '.'))
+  return Number.isFinite(n) && n >= 0 ? n.toFixed(2) : null
+}
 
 export default function CatalogPage() {
-  const loading = useMockLoad()
   const toast = useToast()
-  const [, force] = useState(0)
+  const { membership } = useAuth()
+  const canEdit = membership?.role === 'OWNER' || membership?.role === 'ADMIN'
+
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [category, setCategory] = useState('all')
   const [activeFilter, setActiveFilter] = useState('all')
   const [editing, setEditing] = useState<CatalogItem | 'new' | null>(null)
   const [deleting, setDeleting] = useState<CatalogItem | null>(null)
   const [form, setForm] = useState(blank)
-  const [errors, setErrors] = useState<{ name?: string; price?: string }>({})
+  const [errors, setErrors] = useState<{ name?: string; price?: string; segment?: string; form?: string }>({})
+  const [saving, setSaving] = useState(false)
+  const [newSegment, setNewSegment] = useState('')
+  const q = useDebounced(search.trim())
 
-  const rows = db.catalog.filter(
-    (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) &&
-      (category === 'all' || p.category === category) &&
-      (activeFilter === 'all' || (activeFilter === 'active') === p.active),
+  const segments = useApi(() => catalogService.segments(), [])
+  const categories = useApi(() => catalogService.categories(), [])
+  const items = useApi(
+    () =>
+      catalogService.items({
+        page,
+        pageSize: 20,
+        q,
+        categoryId: category === 'all' ? undefined : category,
+        active: activeFilter === 'all' ? undefined : activeFilter === 'active',
+      }),
+    [page, q, category, activeFilter],
   )
+
+  const segmentList = segments.data?.data.filter((s) => s.active) ?? []
+  const categoryList = categories.data?.data ?? []
+  const formCategories = categoryList.filter((c) => c.active && c.segmentId === form.segmentId)
+  const rows = items.data?.data ?? []
 
   function openForm(p: CatalogItem | 'new') {
     setErrors({})
-    setForm(p === 'new' ? blank : { ...p, price: String(p.price) })
+    setNewSegment('')
+    setForm(
+      p === 'new'
+        ? { ...blank, segmentId: segmentList[0]?.id ?? '' }
+        : {
+            name: p.name,
+            description: p.description ?? '',
+            segmentId: p.segmentId,
+            categoryId: p.categoryId ?? '',
+            price: String(Number(p.basePrice)),
+            unit: p.unit,
+            active: p.active,
+          },
+    )
     setEditing(p)
   }
 
-  function submit(e: FormEvent) {
+  async function createSegment() {
+    const name = newSegment.trim()
+    if (name.length < 2) return setErrors((e) => ({ ...e, segment: 'Informe o nome do segmento (mín. 2 letras).' }))
+    try {
+      const seg = await catalogService.createSegment(name)
+      setNewSegment('')
+      setForm((f) => ({ ...f, segmentId: seg.id, categoryId: '' }))
+      setErrors((e) => ({ ...e, segment: undefined }))
+      segments.reload()
+    } catch (err) {
+      setErrors((e) => ({ ...e, segment: errorMessage(err) }))
+    }
+  }
+
+  async function submit(e: FormEvent) {
     e.preventDefault()
     const n: typeof errors = {}
-    if (!form.name.trim()) n.name = 'Informe o nome do item.'
-    if (!(Number(form.price) > 0)) n.price = 'Informe um preço maior que zero.'
+    if (form.name.trim().length < 2) n.name = 'Informe o nome do item.'
+    const price = toPriceString(form.price)
+    if (price === null || !(Number(price) > 0)) n.price = 'Informe um preço maior que zero.'
+    if (!form.segmentId) n.segment = 'Selecione ou crie um segmento.'
     setErrors(n)
     if (Object.keys(n).length) return
-    const data = { ...form, price: Number(form.price) }
-    if (editing === 'new') db.catalog.unshift({ id: `p${Date.now()}`, ...data })
-    else if (editing) Object.assign(editing, data)
-    toast(editing === 'new' ? 'Item adicionado ao catálogo.' : 'Item atualizado.')
-    setEditing(null)
-    force((x) => x + 1)
+
+    const payload = {
+      segmentId: form.segmentId,
+      name: form.name.trim(),
+      description: form.description.trim(),
+      basePrice: price!,
+      unit: form.unit,
+      active: form.active,
+    }
+    setSaving(true)
+    try {
+      if (editing === 'new') {
+        await catalogService.createItem({ ...payload, ...(form.categoryId ? { categoryId: form.categoryId } : {}) })
+      } else if (editing) {
+        await catalogService.updateItem(editing.id, { ...payload, categoryId: form.categoryId || null })
+      }
+      toast(editing === 'new' ? 'Item adicionado ao catálogo.' : 'Item atualizado.')
+      setEditing(null)
+      items.reload()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) setErrors({ name: 'Já existe um item com este nome.' })
+      else if (err instanceof ApiError && err.status === 400 && err.details?.length)
+        setErrors({
+          name: err.fieldMessage('name'),
+          price: err.fieldMessage('basePrice'),
+          form: err.details.find((d) => !['name', 'basePrice'].includes(d.field ?? ''))?.message,
+        })
+      else setErrors({ form: errorMessage(err) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function remove(item: CatalogItem) {
+    try {
+      await catalogService.deleteItem(item.id)
+      toast('Item excluído.')
+      items.reload()
+    } catch (err) {
+      toast(errorMessage(err))
+    }
   }
 
   return (
@@ -66,84 +154,110 @@ export default function CatalogPage() {
       <PageHeader
         title="Catálogo"
         description="Gerencie seus produtos e serviços"
-        actions={<Button onClick={() => openForm('new')}>+ Adicionar item</Button>}
+        actions={canEdit && <Button onClick={() => openForm('new')}>+ Adicionar item</Button>}
       />
       <Card className="gap-0 p-0">
         <div className="flex items-center gap-3 border-b p-4">
           <div className="relative flex-1">
             <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-            <Input aria-label="Pesquisar no catálogo" placeholder="Pesquisar por nome" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input aria-label="Pesquisar no catálogo" placeholder="Pesquisar por nome ou descrição" className="pl-9" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
           </div>
-          <Select aria-label="Categoria" className="w-44" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <Select aria-label="Categoria" className="w-44" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }}>
             <option value="all">Todas as categorias</option>
-            {categories.map((c) => <option key={c}>{c}</option>)}
+            {categoryList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
-          <Select aria-label="Situação" className="w-40" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
+          <Select aria-label="Situação" className="w-40" value={activeFilter} onChange={(e) => { setActiveFilter(e.target.value); setPage(1) }}>
             <option value="all">Ativos e inativos</option>
             <option value="active">Ativos</option>
             <option value="inactive">Inativos</option>
           </Select>
         </div>
-        {loading ? (
+        {items.error ? (
+          <ErrorNotice message={items.error} onRetry={items.reload} />
+        ) : items.loading && !items.data ? (
           <TableSkeleton />
         ) : rows.length === 0 ? (
-          <EmptyState icon={Package} title="Nenhum item encontrado" description="Cadastre produtos e serviços para usá-los nos orçamentos." action={<Button onClick={() => openForm('new')}>+ Adicionar item</Button>} />
+          <EmptyState icon={Package} title="Nenhum item encontrado" description="Cadastre produtos e serviços para usá-los nos orçamentos." action={canEdit && <Button onClick={() => openForm('new')}>+ Adicionar item</Button>} />
         ) : (
-          <Table>
-            <THead>
-              <TR className="hover:bg-transparent">
-                <TH>Nome</TH><TH>Categoria</TH><TH>Descrição</TH><TH>Unidade</TH><TH>Preço base</TH><TH>Status</TH><TH className="w-12"><span className="sr-only">Ações</span></TH>
-              </TR>
-            </THead>
-            <TBody>
-              {rows.map((p) => (
-                <TR key={p.id}>
-                  <TD className="font-medium">{p.name}</TD>
-                  <TD>{p.category}</TD>
-                  <TD className="text-muted-foreground max-w-64 truncate">{p.description}</TD>
-                  <TD>{p.unit}</TD>
-                  <TD>{formatCurrency(p.price)}</TD>
-                  <TD>
-                    <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', p.active ? 'bg-success/15 text-success' : 'bg-secondary text-muted-foreground')}>
-                      {p.active ? 'Ativo' : 'Inativo'}
-                    </span>
-                  </TD>
-                  <TD>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Ações de ${p.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => openForm(p)}><Pencil /> Editar</DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(p)}><Trash2 /> Excluir</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TD>
+          <>
+            <Table>
+              <THead>
+                <TR className="hover:bg-transparent">
+                  <TH>Nome</TH><TH>Categoria</TH><TH>Descrição</TH><TH>Unidade</TH><TH>Preço base</TH><TH>Status</TH><TH className="w-12"><span className="sr-only">Ações</span></TH>
                 </TR>
-              ))}
-            </TBody>
-          </Table>
+              </THead>
+              <TBody>
+                {rows.map((p) => (
+                  <TR key={p.id}>
+                    <TD className="font-medium">{p.name}</TD>
+                    <TD>{p.category?.name ?? p.segment?.name ?? '—'}</TD>
+                    <TD className="text-muted-foreground max-w-64 truncate">{p.description}</TD>
+                    <TD>{unitLabel(p.unit)}</TD>
+                    <TD>{formatCurrency(p.basePrice)}</TD>
+                    <TD>
+                      <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', p.active ? 'bg-success/15 text-success' : 'bg-secondary text-muted-foreground')}>
+                        {p.active ? 'Ativo' : 'Inativo'}
+                      </span>
+                    </TD>
+                    <TD>
+                      {canEdit && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Ações de ${p.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => openForm(p)}><Pencil /> Editar</DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(p)}><Trash2 /> Excluir</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+            {items.data && <Pager pagination={items.data.pagination} onPage={setPage} />}
+          </>
         )}
       </Card>
 
       <Modal open={!!editing} onOpenChange={(o) => !o && setEditing(null)} title={editing === 'new' ? 'Adicionar item' : 'Editar item'} description="Dados do produto ou serviço.">
         <form onSubmit={submit} noValidate className="space-y-4">
+          {errors.form && <div role="alert" className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">{errors.form}</div>}
           <Field label="Nome" htmlFor="p-name" error={errors.name}>
             <Input id="p-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </Field>
           <Field label="Descrição" htmlFor="p-desc">
             <Textarea id="p-desc" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </Field>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Categoria" htmlFor="p-cat">
-              <Select id="p-cat" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {categories.map((c) => <option key={c}>{c}</option>)}
-              </Select>
+          {segmentList.length === 0 ? (
+            <Field label="Novo segmento" htmlFor="p-newseg" error={errors.segment}>
+              <div className="flex gap-2">
+                <Input id="p-newseg" placeholder="Ex.: Serviços" value={newSegment} onChange={(e) => setNewSegment(e.target.value)} />
+                <Button type="button" variant="outline" onClick={createSegment}>Criar segmento</Button>
+              </div>
+              <p className="text-muted-foreground mt-1 text-xs">Você ainda não tem segmentos. Crie o primeiro para classificar este item.</p>
             </Field>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Segmento" htmlFor="p-seg" error={errors.segment}>
+                <Select id="p-seg" value={form.segmentId} onChange={(e) => setForm({ ...form, segmentId: e.target.value, categoryId: '' })}>
+                  {segmentList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Categoria" htmlFor="p-cat">
+                <Select id="p-cat" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
+                  <option value="">Sem categoria</option>
+                  {formCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </Field>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Preço" htmlFor="p-price" error={errors.price}>
-              <Input id="p-price" type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+              <Input id="p-price" type="number" min={0} step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
             </Field>
             <Field label="Unidade" htmlFor="p-unit">
               <Select id="p-unit" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
-                {units.map((u) => <option key={u}>{u}</option>)}
+                {unitCodes.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
               </Select>
             </Field>
           </div>
@@ -152,7 +266,7 @@ export default function CatalogPage() {
           </label>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
-            <Button type="submit">Salvar</Button>
+            <Button type="submit" disabled={saving}>Salvar</Button>
           </div>
         </form>
       </Modal>
@@ -162,11 +276,7 @@ export default function CatalogPage() {
         onOpenChange={(o) => !o && setDeleting(null)}
         title="Excluir item?"
         description={`"${deleting?.name ?? ''}" será removido do catálogo.`}
-        onConfirm={() => {
-          if (deleting) db.catalog.splice(db.catalog.indexOf(deleting), 1)
-          toast('Item excluído.')
-          force((x) => x + 1)
-        }}
+        onConfirm={() => deleting && remove(deleting)}
       />
     </>
   )

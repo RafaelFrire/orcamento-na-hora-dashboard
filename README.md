@@ -11,7 +11,24 @@ Front-end do **Orçamento na Hora** (SaaS de orçamentos comerciais). A API est�
 | `npm run build` | Typecheck + build de produção |
 | `npm run lint` | ESLint |
 
-Copie `.env.example` para `.env` e ajuste `VITE_API_URL`.
+## Integração com a API
+O front consome a API em `../orcamento-na-hora` (Express + Prisma + PostgreSQL).
+
+1. Suba o banco e a API (`npm run dev` em `../orcamento-na-hora`, porta 3000).
+2. `npm run dev` aqui. O Vite faz proxy de `/api` para `http://localhost:3000` (sem CORS).
+3. Crie sua conta em `/cadastro` (cria usuário + empresa) ou entre com um usuário do seed da API.
+
+Copie `.env.example` para `.env` se precisar mudar algo:
+- `API_PROXY_TARGET`: destino do proxy em desenvolvimento.
+- `VITE_API_URL`: URL da API quando front e API ficam em hosts diferentes (a API precisa liberar CORS).
+
+A sessão (JWT + empresa ativa) fica no `localStorage`; um 401 em rota protegida encerra a sessão.
+
+### O que vem da API
+Login/cadastro, clientes, catálogo (segmentos, categorias, itens), orçamentos (criar, listar, detalhe, PDF, link do WhatsApp) e modelo de orçamento (Configurações).
+
+### Ainda sem backend (não integrado)
+Status/aprovação, edição, duplicação e exclusão de orçamentos; desconto e condições de pagamento por orçamento; conversas e conexão do WhatsApp (módulos futuros, com dados de exemplo); edição de perfil/senha e plano.
 
 ## Estrutura
 ```
@@ -22,7 +39,8 @@ src/
   config/              navegação etc.
   pages/               páginas (auth/ para login e cadastro)
   routes/              definição do router
-  services/            acesso à API
+  services/            cliente HTTP (api.ts) e serviços por domínio
+  contexts/            AuthContext (sessão)
   hooks/ types/ lib/
 docs/specs/            specs versionadas (ddMMYYYY-identificacao-da-task)
 ```

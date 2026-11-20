@@ -4,9 +4,12 @@ import { Link, useLocation } from 'react-router-dom'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { routeTitles } from '@/config/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import { initials } from '@/lib/format'
 
 export function Header() {
   const { pathname } = useLocation()
+  const { user } = useAuth()
   const parts = pathname.split('/').filter(Boolean)
   const crumbs = parts.map((p, i) => ({
     label: routeTitles[p] ?? 'Detalhes',
@@ -51,7 +54,7 @@ export function Header() {
           <span className="bg-primary absolute top-1.5 right-1.5 size-2 rounded-full" />
         </button>
         <Avatar>
-          <AvatarFallback className="bg-sidebar text-xs font-semibold text-white">RS</AvatarFallback>
+          <AvatarFallback className="bg-sidebar text-xs font-semibold text-white">{initials(user?.name)}</AvatarFallback>
         </Avatar>
       </div>
     </header>

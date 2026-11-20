@@ -4,24 +4,29 @@ import { Link } from 'react-router-dom'
 
 import { ClientFormModal } from '@/components/shared/ClientFormModal'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { ErrorNotice, Pager } from '@/components/shared/Pager'
 import { EmptyState, TableSkeleton } from '@/components/shared/States'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table'
 import { useToast } from '@/components/ui/toast'
-import { useMockLoad } from '@/hooks/useMockLoad'
+import { useApi, useDebounced } from '@/hooks/useApi'
 import { formatDate } from '@/lib/format'
-import { clientQuotes, db } from '@/mocks/store'
+import { customersService } from '@/services/customers'
 
 export default function ClientsPage() {
-  const loading = useMockLoad()
   const toast = useToast()
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [open, setOpen] = useState(false)
-  const [, force] = useState(0)
+  const q = useDebounced(search.trim())
 
-  const rows = db.clients.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase()))
+  const { data, loading, error, reload } = useApi(
+    () => customersService.list({ page, pageSize: 20, q }),
+    [page, q],
+  )
+  const rows = data?.data ?? []
 
   return (
     <>
@@ -30,40 +35,46 @@ export default function ClientsPage() {
         <div className="border-b p-4">
           <div className="relative max-w-md">
             <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-            <Input aria-label="Buscar cliente" placeholder="Buscar por nome ou e-mail" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input
+              aria-label="Buscar cliente"
+              placeholder="Buscar por nome, e-mail ou telefone"
+              className="pl-9"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            />
           </div>
         </div>
-        {loading ? (
+        {error ? (
+          <ErrorNotice message={error} onRetry={reload} />
+        ) : loading && !data ? (
           <TableSkeleton />
         ) : rows.length === 0 ? (
           <EmptyState icon={Users} title="Nenhum cliente encontrado" description="Cadastre seu primeiro cliente para começar." action={<Button onClick={() => setOpen(true)}>+ Novo cliente</Button>} />
         ) : (
-          <Table>
-            <THead>
-              <TR className="hover:bg-transparent">
-                <TH>Nome</TH><TH>Telefone</TH><TH>E-mail</TH><TH>Orçamentos</TH><TH>Último orçamento</TH><TH><span className="sr-only">Ações</span></TH>
-              </TR>
-            </THead>
-            <TBody>
-              {rows.map((c) => {
-                const qs = clientQuotes(c.id)
-                const last = qs.map((q) => q.createdAt).sort().reverse()[0]
-                return (
+          <>
+            <Table>
+              <THead>
+                <TR className="hover:bg-transparent">
+                  <TH>Nome</TH><TH>Telefone</TH><TH>E-mail</TH><TH>Cadastrado em</TH><TH><span className="sr-only">Ações</span></TH>
+                </TR>
+              </THead>
+              <TBody>
+                {rows.map((c) => (
                   <TR key={c.id}>
                     <TD className="font-medium">{c.name}</TD>
-                    <TD>{c.phone}</TD>
-                    <TD className="text-muted-foreground">{c.email}</TD>
-                    <TD>{qs.length}</TD>
-                    <TD className="text-muted-foreground">{last ? formatDate(last) : '—'}</TD>
+                    <TD>{c.phone ?? '—'}</TD>
+                    <TD className="text-muted-foreground">{c.email ?? '—'}</TD>
+                    <TD className="text-muted-foreground">{formatDate(c.createdAt)}</TD>
                     <TD><Button asChild variant="outline" size="sm"><Link to={`/clientes/${c.id}`}>Ver detalhes</Link></Button></TD>
                   </TR>
-                )
-              })}
-            </TBody>
-          </Table>
+                ))}
+              </TBody>
+            </Table>
+            {data && <Pager pagination={data.pagination} onPage={setPage} />}
+          </>
         )}
       </Card>
-      <ClientFormModal open={open} onOpenChange={setOpen} onSaved={(c) => { toast(`Cliente ${c.name} cadastrado.`); force((n) => n + 1) }} />
+      <ClientFormModal open={open} onOpenChange={setOpen} onSaved={(c) => { toast(`Cliente ${c.name} cadastrado.`); reload() }} />
     </>
   )
 }

@@ -1,16 +1,20 @@
 import { Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { AuthShell } from '@/components/layout/AuthShell'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { useAuth } from '@/contexts/AuthContext'
+import { ApiError } from '@/services/api'
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { user, login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({})
@@ -25,15 +29,20 @@ export default function LoginPage() {
     if (Object.keys(next).length) return
 
     setLoading(true)
-    await new Promise((r) => setTimeout(r, import.meta.env.MODE === 'test' ? 0 : 700))
-    setLoading(false)
-    // Mock: a senha "senhaerrada" simula credenciais inválidas.
-    if (password === 'senhaerrada') {
-      setErrors({ form: 'E-mail ou senha incorretos.' })
-      return
+    try {
+      await login(email.trim(), password)
+      navigate((location.state as { from?: string } | null)?.from ?? '/', { replace: true })
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) setErrors({ form: 'E-mail ou senha incorretos.' })
+      else if (err instanceof Error && err.message === 'NO_MEMBERSHIP')
+        setErrors({ form: 'Sua conta não está vinculada a nenhuma empresa. Fale com o suporte.' })
+      else setErrors({ form: err instanceof ApiError ? err.message : 'Não foi possível entrar. Tente novamente.' })
+    } finally {
+      setLoading(false)
     }
-    navigate('/')
   }
+
+  if (user) return <Navigate to="/" replace />
 
   return (
     <AuthShell>

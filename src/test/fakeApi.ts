@@ -1,0 +1,124 @@
+import { vi } from 'vitest'
+
+// API falsa em memória: responde ao fetch do cliente HTTP com os contratos do backend.
+const ORG = 'org1'
+export const user = { id: 'u1', name: 'Rafael Sousa', email: 'rafael@acme.com' }
+export const membership = { organizationId: ORG, name: 'Acme Serviços', slug: 'acme', role: 'OWNER' as const }
+
+const page = (data: unknown[], pageSize = 20) => ({
+  data,
+  pagination: { page: 1, pageSize, total: data.length, totalPages: 1 },
+})
+
+export function makeDb() {
+  const customers = [
+    { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina@costaarq.com.br', createdAt: '2026-01-12T12:00:00.000Z' },
+    { id: 'c2', name: 'Carlos Pereira', phone: '(21) 99812-3344', email: null, createdAt: '2026-02-03T12:00:00.000Z' },
+  ]
+  const segments = [{ id: 's1', name: 'Serviços', active: true }]
+  const categories = [{ id: 'k1', segmentId: 's1', name: 'Consultoria', active: true }]
+  const items = [
+    { id: 'p1', segmentId: 's1', categoryId: 'k1', name: 'Consultoria técnica', description: 'Hora de consultoria', basePrice: '220.00', unit: 'HR', active: true, segment: { id: 's1', name: 'Serviços' }, category: { id: 'k1', name: 'Consultoria' } },
+    { id: 'p2', segmentId: 's1', categoryId: null, name: 'Manutenção mensal', description: null, basePrice: '890.00', unit: 'UN', active: false, segment: { id: 's1', name: 'Serviços' }, category: null },
+  ]
+  const quotes = [
+    { id: 'q2', number: 2, customerId: 'c2', customer: { id: 'c2', name: 'Carlos Pereira', phone: null, email: null }, notes: null, total: '3850.00', createdAt: '2026-11-16T12:00:00.000Z', validUntil: '2026-12-01T12:00:00.000Z', issuer: null, itemsCount: 2 },
+    { id: 'q1', number: 1, customerId: 'c1', customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: null }, notes: 'Obs', total: '660.00', createdAt: '2026-11-10T12:00:00.000Z', validUntil: '2026-11-25T12:00:00.000Z', issuer: null, itemsCount: 1 },
+  ]
+  return { customers, segments, categories, items, quotes }
+}
+
+type Db = ReturnType<typeof makeDb>
+export type Call = { method: string; path: string; body?: unknown }
+
+const json = (body: unknown, status = 200) =>
+  Promise.resolve(new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
+const err = (status: number, code: string, message: string) => json({ error: { code, message } }, status)
+
+export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {}) {
+  const calls: Call[] = []
+  if (opts.authed !== false) {
+    localStorage.setItem('onh:token', 'tok')
+    localStorage.setItem('onh:organization', ORG)
+  } else {
+    localStorage.clear()
+  }
+
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), 'http://localhost')
+    const path = url.pathname.replace(/^\/api/, '')
+    const method = init?.method ?? 'GET'
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    const q = (url.searchParams.get('q') ?? '').toLowerCase()
+    calls.push({ method, path, body })
+
+    if (path === '/auth/login' && method === 'POST') {
+      if (body.password === 'senhaerrada') return err(401, 'UNAUTHENTICATED', 'Credenciais inválidas')
+      return json({ token: 'tok', user, memberships: [membership] })
+    }
+    if (path === '/auth/register') return body.email === 'dup@x.com' ? err(409, 'CONFLICT', 'E-mail já cadastrado') : json({ user }, 201)
+    if (path === '/auth/me') return json({ user, memberships: [membership] })
+    if (path === '/auth/logout') return json(null, 204)
+    if (path === '/organizations' && method === 'POST') return json({ organization: { id: ORG, name: body.name, slug: 'acme' } }, 201)
+
+    const m = path.match(/^\/organizations\/org1(\/.*)$/)
+    if (!m) return err(404, 'NOT_FOUND', 'Rota inexistente')
+    const p = m[1]
+
+    if (p === '/customers' && method === 'GET') return json(page(db.customers.filter((c) => c.name.toLowerCase().includes(q))))
+    if (p === '/customers' && method === 'POST') {
+      const c = { id: `c${db.customers.length + 1}`, name: body.name, phone: body.phone ?? null, email: body.email ?? null, createdAt: '2026-11-20T12:00:00.000Z' }
+      db.customers.unshift(c)
+      return json({ customer: c }, 201)
+    }
+    const cm = p.match(/^\/customers\/(.+)$/)
+    if (cm) {
+      const c = db.customers.find((x) => x.id === cm[1])
+      return c ? json({ customer: c }) : err(404, 'NOT_FOUND', 'Cliente não encontrado')
+    }
+
+    if (p === '/catalog/segments') return json(page(db.segments))
+    if (p === '/catalog/categories') return json(page(db.categories))
+    if (p === '/catalog/items' && method === 'GET') {
+      const active = url.searchParams.get('active')
+      return json(page(db.items.filter((i) => i.name.toLowerCase().includes(q) && (active === null || String(i.active) === active))))
+    }
+    if (p === '/catalog/items' && method === 'POST') {
+      const seg = db.segments.find((s) => s.id === body.segmentId)!
+      const item = { id: `p${db.items.length + 1}`, categoryId: null, description: body.description || null, ...body, segment: seg, category: null }
+      db.items.unshift(item)
+      return json({ item }, 201)
+    }
+
+    if (p === '/quotes' && method === 'GET') {
+      const cid = url.searchParams.get('customerId')
+      return json(page(db.quotes.filter((x) => (!cid || x.customerId === cid) && (!q || x.customer.name.toLowerCase().includes(q) || `${x.number}` === q))))
+    }
+    if (p === '/quotes' && method === 'POST') {
+      const c = db.customers.find((x) => x.id === body.customerId)!
+      const lines = body.items.map((i: { catalogItemId: string; quantity: string; unitPrice?: string }, n: number) => {
+        const it = db.items.find((x) => x.id === i.catalogItemId)!
+        const unitPrice = i.unitPrice ?? it.basePrice
+        return { id: `qi${n}`, position: n + 1, catalogItemId: it.id, name: it.name, description: it.description, unit: it.unit, quantity: i.quantity, catalogUnitPrice: it.basePrice, unitPrice, subtotal: (Number(i.quantity) * Number(unitPrice)).toFixed(2) }
+      })
+      const quote = { id: 'q3', number: 3, customerId: c.id, customer: c, notes: body.notes ?? null, total: lines.reduce((s: number, l: { subtotal: string }) => s + Number(l.subtotal), 0).toFixed(2), createdAt: '2026-11-20T12:00:00.000Z', validUntil: '2026-12-05T12:00:00.000Z', issuer: null, items: lines }
+      return json({ quote }, 201)
+    }
+    const qm = p.match(/^\/quotes\/([^/]+)$/)
+    if (qm) {
+      const quote = db.quotes.find((x) => x.id === qm[1])
+      return quote
+        ? json({ quote: { ...quote, items: [{ id: 'i1', position: 1, catalogItemId: 'p1', name: 'Consultoria técnica', description: null, unit: 'HR', quantity: '3.000', catalogUnitPrice: '220.00', unitPrice: '220.00', subtotal: '660.00' }] } })
+        : err(404, 'NOT_FOUND', 'Orçamento não encontrado')
+    }
+
+    if (p === '/quote-template' && method === 'GET')
+      return json({ template: { companyName: 'Acme Serviços', document: null, phone: null, email: null, address: null, website: null, primaryColor: '#1F4E79', commercialTerms: 'Pagamento em 2x', footerText: null, validityDays: 15, isDefault: true } })
+    if (p === '/quote-template' && method === 'PUT') return json({ template: body })
+
+    return err(404, 'NOT_FOUND', `Sem handler: ${method} ${p}`)
+  })
+
+  vi.stubGlobal('fetch', fetchMock)
+  return { db, calls, fetchMock }
+}

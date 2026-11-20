@@ -1,19 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, quoteSubtotal, quoteTotal } from './format'
+import { formatDate, formatQuantity, formatQuoteNumber, lineTotal, monthKey, toNumber } from './format'
 
 describe('format', () => {
-  it('formata data ISO para pt-BR', () => {
+  it('formata data ISO simples para pt-BR', () => {
     expect(formatDate('2026-11-18')).toBe('18/11/2026')
   })
-  const base = {
-    items: [
-      { id: '1', name: 'a', description: '', quantity: 2, unit: 'un', unitPrice: 100 },
-      { id: '2', name: 'b', description: '', quantity: 1, unit: 'un', unitPrice: 50.5 },
-    ],
-  }
-  it('calcula subtotal', () => expect(quoteSubtotal(base)).toBe(250.5))
-  it('aplica desconto e não fica negativo', () => {
-    expect(quoteTotal({ ...base, discount: 50 })).toBe(200.5)
-    expect(quoteTotal({ ...base, discount: 9999 })).toBe(0)
+  it('formata timestamp no fuso de São Paulo', () => {
+    // 01:00 UTC ainda é dia 18 em São Paulo (UTC-3)
+    expect(formatDate('2026-11-19T01:00:00.000Z')).toBe('18/11/2026')
+  })
+  it('formata número do orçamento', () => {
+    expect(formatQuoteNumber(7)).toBe('ORC-0007')
+    expect(formatQuoteNumber(1234)).toBe('ORC-1234')
+  })
+  it('formata quantidade decimal', () => {
+    expect(formatQuantity('1.500')).toBe('1,5')
+    expect(formatQuantity('2.000')).toBe('2')
+  })
+  it('calcula subtotal com 2 casas', () => {
+    expect(lineTotal(3, 220)).toBe(660)
+    expect(lineTotal(1.5, 0.35)).toBe(0.53)
+  })
+  it('converte strings decimais com segurança', () => {
+    expect(toNumber('49.90')).toBe(49.9)
+    expect(toNumber(null)).toBe(0)
+  })
+  it('agrupa por mês', () => {
+    expect(monthKey('2026-11-19T12:00:00.000Z')).toBe('2026-11')
   })
 })

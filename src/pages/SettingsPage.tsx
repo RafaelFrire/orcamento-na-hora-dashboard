@@ -1,37 +1,115 @@
-import { Upload } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { ErrorNotice } from '@/components/shared/Pager'
+import { TableSkeleton } from '@/components/shared/States'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Textarea } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useAuth } from '@/contexts/AuthContext'
+import { errorMessage, useApi } from '@/hooks/useApi'
 import { cn } from '@/lib/utils'
-import { currentUser, planUsage } from '@/mocks/data'
+import { ApiError } from '@/services/api'
+import { templateService } from '@/services/template'
+import type { QuoteTemplate } from '@/types'
 
 const sections = [
   { key: 'empresa', label: 'Empresa' },
   { key: 'perfil', label: 'Perfil' },
   { key: 'orcamento', label: 'Personalização de orçamento' },
-  { key: 'plano', label: 'Plano e utilização' },
 ] as const
 
-function LogoUpload({ label = 'Logotipo' }: { label?: string }) {
-  return (
-    <Field label={label}>
-      <Button type="button" variant="outline"><Upload /> Enviar imagem</Button>
-    </Field>
-  )
+type Form = {
+  companyName: string
+  document: string
+  phone: string
+  email: string
+  address: string
+  website: string
+  primaryColor: string
+  commercialTerms: string
+  footerText: string
+  validityDays: string
 }
+
+const toForm = (t: QuoteTemplate): Form => ({
+  companyName: t.companyName,
+  document: t.document ?? '',
+  phone: t.phone ?? '',
+  email: t.email ?? '',
+  address: t.address ?? '',
+  website: t.website ?? '',
+  primaryColor: t.primaryColor,
+  commercialTerms: t.commercialTerms ?? '',
+  footerText: t.footerText ?? '',
+  validityDays: String(t.validityDays),
+})
 
 export default function SettingsPage() {
   const toast = useToast()
+  const { user, membership } = useAuth()
+  const canEdit = membership?.role === 'OWNER' || membership?.role === 'ADMIN'
   const [section, setSection] = useState<(typeof sections)[number]['key']>('empresa')
-  const [pw, setPw] = useState({ next: '', confirm: '' })
-  const [pwError, setPwError] = useState('')
-  const save = () => toast('Alterações salvas com sucesso.')
-  const pct = Math.round((planUsage.used / planUsage.limit) * 100)
+  const template = useApi(() => templateService.get(), [])
+  const [form, setForm] = useState<Form | null>(null)
+  const [errors, setErrors] = useState<Partial<Record<keyof Form | 'form', string>>>({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (template.data) setForm(toForm(template.data))
+  }, [template.data])
+
+  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => (f ? { ...f, [k]: e.target.value } : f))
+
+  async function save(e?: FormEvent) {
+    e?.preventDefault()
+    if (!form) return
+    const n: typeof errors = {}
+    if (form.companyName.trim().length < 2) n.companyName = 'Informe o nome da empresa.'
+    if (!/^#[0-9a-fA-F]{6}$/.test(form.primaryColor)) n.primaryColor = 'Use o formato #RRGGBB.'
+    const days = Number(form.validityDays)
+    if (!Number.isInteger(days) || days < 1 || days > 365) n.validityDays = 'Informe de 1 a 365 dias.'
+    setErrors(n)
+    if (Object.keys(n).length) return
+
+    setSaving(true)
+    try {
+      const saved = await templateService.save({
+        companyName: form.companyName.trim(),
+        document: form.document.trim() || null,
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        address: form.address.trim() || null,
+        website: form.website.trim() || null,
+        primaryColor: form.primaryColor,
+        commercialTerms: form.commercialTerms.trim() || null,
+        footerText: form.footerText.trim() || null,
+        validityDays: days,
+      })
+      setForm(toForm(saved))
+      toast('Alterações salvas com sucesso.')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400 && err.details?.length) {
+        const next: typeof errors = {}
+        for (const d of err.details) if (d.field && d.field in form) next[d.field as keyof Form] = d.message
+        next.form = Object.keys(next).length ? undefined : err.message
+        setErrors(next)
+      } else {
+        setErrors({ form: errorMessage(err) })
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveButton = canEdit ? (
+    <div><Button type="submit" disabled={saving}>Salvar alterações</Button></div>
+  ) : (
+    <p className="text-muted-foreground text-sm">Somente proprietários e administradores podem alterar estas informações.</p>
+  )
 
   return (
     <>
@@ -47,74 +125,65 @@ export default function SettingsPage() {
         </nav>
 
         <Card className="gap-5 p-8">
-          {section === 'empresa' && (
-            <>
-              <h2 className="text-lg font-semibold">Empresa</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Nome fantasia" htmlFor="fantasia"><Input id="fantasia" defaultValue={currentUser.company} /></Field>
-                <Field label="Razão social" htmlFor="razao"><Input id="razao" defaultValue="Acme Serviços Ltda." /></Field>
-                <Field label="CNPJ" htmlFor="cnpj"><Input id="cnpj" defaultValue="12.345.678/0001-90" /></Field>
-                <Field label="Telefone" htmlFor="tel"><Input id="tel" defaultValue="(11) 3000-0000" /></Field>
-                <Field label="E-mail" htmlFor="emp-email"><Input id="emp-email" defaultValue="contato@acmeservicos.com.br" /></Field>
-                <Field label="Endereço" htmlFor="end"><Input id="end" defaultValue="Av. Paulista, 1000 - São Paulo/SP" /></Field>
-              </div>
-              <LogoUpload />
-              <div><Button onClick={save}>Salvar alterações</Button></div>
-            </>
-          )}
-
-          {section === 'perfil' && (
+          {section === 'perfil' ? (
             <>
               <h2 className="text-lg font-semibold">Perfil</h2>
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Nome" htmlFor="nome"><Input id="nome" defaultValue={currentUser.fullName} /></Field>
-                <Field label="E-mail" htmlFor="p-email"><Input id="p-email" defaultValue={currentUser.email} /></Field>
+                <Field label="Nome" htmlFor="nome"><Input id="nome" value={user?.name ?? ''} readOnly /></Field>
+                <Field label="E-mail" htmlFor="p-email"><Input id="p-email" value={user?.email ?? ''} readOnly /></Field>
+                <Field label="Empresa" htmlFor="p-org"><Input id="p-org" value={membership?.name ?? ''} readOnly /></Field>
+                <Field label="Função" htmlFor="p-role">
+                  <Input id="p-role" readOnly value={{ OWNER: 'Proprietário', ADMIN: 'Administrador', MEMBER: 'Membro' }[membership?.role ?? 'MEMBER']} />
+                </Field>
               </div>
-              <LogoUpload label="Foto" />
-              <h3 className="border-t pt-5 font-semibold">Alterar senha</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Nova senha" htmlFor="new-pw"><Input id="new-pw" type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></Field>
-                <Field label="Confirmar nova senha" htmlFor="conf-pw" error={pwError}><Input id="conf-pw" type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} /></Field>
-              </div>
-              <div>
-                <Button onClick={() => {
-                  if (pw.next.length < 8) return setPwError('A senha deve ter ao menos 8 caracteres.')
-                  if (pw.next !== pw.confirm) return setPwError('As senhas não coincidem.')
-                  setPwError(''); setPw({ next: '', confirm: '' }); toast('Senha alterada com sucesso.')
-                }}>Atualizar perfil</Button>
-              </div>
+              <p className="text-muted-foreground text-sm">A edição de perfil e a troca de senha ainda não estão disponíveis.</p>
             </>
-          )}
-
-          {section === 'orcamento' && (
-            <>
-              <h2 className="text-lg font-semibold">Personalização de orçamento</h2>
-              <LogoUpload />
-              <Field label="Informações exibidas no PDF" htmlFor="pdf-info">
-                <Textarea id="pdf-info" defaultValue="Acme Serviços Ltda. · CNPJ 12.345.678/0001-90 · (11) 3000-0000" />
-              </Field>
-              <Field label="Condições comerciais padrão" htmlFor="pdf-terms">
-                <Textarea id="pdf-terms" defaultValue="Validade de 15 dias. Pagamento: 50% na aprovação e 50% na entrega." />
-              </Field>
-              <div><Button onClick={save}>Salvar alterações</Button></div>
-            </>
-          )}
-
-          {section === 'plano' && (
-            <>
-              <h2 className="text-lg font-semibold">Plano e utilização</h2>
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div><p className="text-muted-foreground text-xs">Plano atual</p><p className="font-semibold">{planUsage.plan}</p></div>
-                <p className="text-sm">{planUsage.used} de {planUsage.limit} orçamentos no mês</p>
-              </div>
-              <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="bg-secondary h-2 overflow-hidden rounded-full">
-                <div className="bg-primary h-full" style={{ width: `${pct}%` }} />
-              </div>
-              <h3 className="font-semibold">Histórico de utilização</h3>
-              <ul className="divide-y text-sm">
-                {planUsage.history.map((h) => <li key={h.month} className="flex justify-between py-2"><span>{h.month}</span><span>{h.used} orçamentos</span></li>)}
-              </ul>
-            </>
+          ) : template.error ? (
+            <ErrorNotice message={template.error} onRetry={template.reload} />
+          ) : !form ? (
+            <TableSkeleton rows={4} />
+          ) : (
+            <form onSubmit={save} noValidate className="space-y-5">
+              {errors.form && <div role="alert" className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">{errors.form}</div>}
+              {section === 'empresa' && (
+                <>
+                  <h2 className="text-lg font-semibold">Empresa</h2>
+                  <p className="text-muted-foreground -mt-3 text-sm">Estes dados aparecem como emitente no PDF do orçamento.</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Nome da empresa" htmlFor="fantasia" error={errors.companyName}><Input id="fantasia" value={form.companyName} onChange={set('companyName')} disabled={!canEdit} /></Field>
+                    <Field label="CNPJ / CPF" htmlFor="cnpj" error={errors.document}><Input id="cnpj" value={form.document} onChange={set('document')} disabled={!canEdit} /></Field>
+                    <Field label="Telefone" htmlFor="tel" error={errors.phone}><Input id="tel" value={form.phone} onChange={set('phone')} disabled={!canEdit} /></Field>
+                    <Field label="E-mail" htmlFor="emp-email" error={errors.email}><Input id="emp-email" value={form.email} onChange={set('email')} disabled={!canEdit} /></Field>
+                    <Field label="Endereço" htmlFor="end" error={errors.address}><Input id="end" value={form.address} onChange={set('address')} disabled={!canEdit} /></Field>
+                    <Field label="Site" htmlFor="site" error={errors.website}><Input id="site" value={form.website} onChange={set('website')} disabled={!canEdit} /></Field>
+                  </div>
+                  {saveButton}
+                </>
+              )}
+              {section === 'orcamento' && (
+                <>
+                  <h2 className="text-lg font-semibold">Personalização de orçamento</h2>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Cor principal" htmlFor="pdf-color" error={errors.primaryColor}>
+                      <div className="flex items-center gap-2">
+                        <input type="color" aria-label="Seletor de cor" className="size-9 shrink-0 cursor-pointer rounded border" value={/^#[0-9a-fA-F]{6}$/.test(form.primaryColor) ? form.primaryColor : '#1F4E79'} onChange={set('primaryColor')} disabled={!canEdit} />
+                        <Input id="pdf-color" value={form.primaryColor} onChange={set('primaryColor')} disabled={!canEdit} />
+                      </div>
+                    </Field>
+                    <Field label="Validade padrão (dias)" htmlFor="pdf-days" error={errors.validityDays}>
+                      <Input id="pdf-days" type="number" min={1} max={365} value={form.validityDays} onChange={set('validityDays')} disabled={!canEdit} />
+                    </Field>
+                  </div>
+                  <Field label="Condições comerciais padrão" htmlFor="pdf-terms" error={errors.commercialTerms}>
+                    <Textarea id="pdf-terms" value={form.commercialTerms} onChange={set('commercialTerms')} disabled={!canEdit} placeholder="Ex.: Pagamento: 50% na aprovação e 50% na entrega." />
+                  </Field>
+                  <Field label="Texto do rodapé" htmlFor="pdf-footer" error={errors.footerText}>
+                    <Input id="pdf-footer" value={form.footerText} onChange={set('footerText')} disabled={!canEdit} />
+                  </Field>
+                  {saveButton}
+                </>
+              )}
+            </form>
           )}
         </Card>
       </div>
