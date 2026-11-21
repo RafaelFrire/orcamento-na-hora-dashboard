@@ -370,6 +370,7 @@ describe('conversas (inbox)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
 
     expect(await screen.findByRole('button', { name: 'Baixar proposta.pdf' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Visualizar PDF' })).toBeInTheDocument()
     expect(screen.getByText('Segue a proposta', { selector: 'span.break-words' })).toBeInTheDocument()
     const [uploadUrl, uploadInit] = fetchMock.mock.calls.find(([u]) => String(u).includes('/v1/attachments'))!
     expect(String(uploadUrl)).toContain('filename=proposta.pdf')
@@ -377,6 +378,20 @@ describe('conversas (inbox)', () => {
     expect(String(uploadUrl)).toContain('caption=Segue+a+proposta')
     expect((uploadInit?.headers as Record<string, string>)['Content-Type']).toBe('application/octet-stream')
     expect(screen.queryByRole('button', { name: 'Remover anexo' })).not.toBeInTheDocument()
+  })
+
+  it('mostra a prévia do PDF enviado dentro da conversa', async () => {
+    const db = makeDb()
+    db.messages.v1.push({ id: 'pdf1', direction: 'OUT', type: 'document', body: 'Segue o orçamento', status: 'SENT', errorMessage: null, sentAt: '2026-11-20T13:50:00.000Z', hasMedia: true, mediaMime: 'application/pdf', mediaName: 'ORC-0001.pdf' })
+    const { calls } = installFakeApi(db)
+    URL.createObjectURL = vi.fn(() => 'blob:pdf')
+    URL.revokeObjectURL = vi.fn()
+    renderApp('/conversas')
+    await userEvent.click(await screen.findByRole('button', { name: 'Visualizar PDF' }))
+    expect(await screen.findByTitle('Prévia de ORC-0001.pdf')).toHaveAttribute('src', expect.stringContaining('blob:pdf'))
+    expect(calls.some((c) => c.path.endsWith('/messages/pdf1/media'))).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Ocultar prévia' }))
+    expect(screen.queryByTitle('Prévia de ORC-0001.pdf')).not.toBeInTheDocument()
   })
 
   it('recusa arquivo de tipo não suportado sem chamar a API', async () => {
