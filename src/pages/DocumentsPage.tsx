@@ -2,10 +2,14 @@ import { FileText, LayoutTemplate, Palette, PenLine, SlidersHorizontal, type Luc
 import { useState } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { ErrorNotice } from '@/components/shared/Pager'
 import { TableSkeleton } from '@/components/shared/States'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
+import { useAuth } from '@/contexts/AuthContext'
+import { errorMessage } from '@/hooks/useApi'
 import { cn } from '@/lib/utils'
+import { ApiError } from '@/services/api'
 
 import { BrandingSettings } from '@/features/documents/components/BrandingSettings'
 import { ContentEditor } from '@/features/documents/components/ContentEditor'
@@ -25,6 +29,8 @@ const tabs: { key: string; label: string; icon: LucideIcon }[] = [
 export default function DocumentsPage() {
   const api = useDocumentConfig()
   const toast = useToast()
+  const { membership } = useAuth()
+  const canEdit = membership?.role === 'OWNER' || membership?.role === 'ADMIN'
   const [tab, setTab] = useState('modelos')
   const { config, selected } = api
 
@@ -32,8 +38,9 @@ export default function DocumentsPage() {
     try {
       await api.save()
       toast('Configurações de documentos salvas.')
-    } catch {
-      toast('Não foi possível salvar. Tente novamente.', 'error')
+    } catch (e) {
+      const detail = e instanceof ApiError ? e.details?.[0]?.message : undefined
+      toast(detail ? `${errorMessage(e)} ${detail}` : errorMessage(e), 'error')
     }
   }
 
@@ -42,11 +49,13 @@ export default function DocumentsPage() {
       <PageHeader
         title="Documentos e PDFs"
         description="Personalize modelos, identidade visual e conteúdo dos seus documentos."
-        actions={<SaveConfiguration dirty={api.dirty} saving={api.saving} justSaved={api.justSaved} onSave={save} onDiscard={api.discard} />}
+        actions={<SaveConfiguration canEdit={canEdit} dirty={api.dirty} saving={api.saving} justSaved={api.justSaved} onSave={save} onDiscard={api.discard} />}
       />
 
       {api.loading ? (
         <TableSkeleton rows={5} />
+      ) : api.error ? (
+        <ErrorNotice message={api.error} onRetry={api.reload} />
       ) : (
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
           <Card className="gap-0 overflow-hidden p-0">

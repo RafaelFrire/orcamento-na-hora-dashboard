@@ -3,6 +3,7 @@ import { Check, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface Props {
+  canEdit?: boolean
   dirty: boolean
   saving: boolean
   justSaved: boolean
@@ -10,9 +11,10 @@ interface Props {
   onDiscard: () => void
 }
 
-export function SaveConfiguration({ dirty, saving, justSaved, onSave, onDiscard }: Props) {
+export function SaveConfiguration({ canEdit = true, dirty, saving, justSaved, onSave, onDiscard }: Props) {
   return (
     <div className="flex items-center gap-3">
+      {!canEdit && <span className="text-muted-foreground text-xs">Somente proprietários e administradores podem salvar.</span>}
       <span role="status" aria-live="polite" className="flex items-center gap-1.5 text-xs">
         {dirty ? (
           <>
@@ -29,7 +31,7 @@ export function SaveConfiguration({ dirty, saving, justSaved, onSave, onDiscard 
       <Button variant="ghost" size="sm" disabled={!dirty || saving} onClick={onDiscard}>
         Descartar
       </Button>
-      <Button size="sm" disabled={!dirty || saving} onClick={onSave}>
+      <Button size="sm" disabled={!canEdit || !dirty || saving} onClick={onSave}>
         {saving && <Loader2 className="animate-spin" />} Salvar alterações
       </Button>
     </div>

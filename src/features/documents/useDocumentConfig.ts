@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { errorMessage } from '@/hooks/useApi'
+
 import { presets } from './constants'
 import { documentService } from './documentService'
 import { initialConfig } from './mocks'
@@ -22,13 +24,28 @@ export function useDocumentConfig() {
   const [saving, setSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
 
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+
   useEffect(() => {
-    documentService.load().then((c) => {
-      setConfig(c)
-      setSaved(JSON.stringify(c))
-      setLoading(false)
-    })
-  }, [])
+    let alive = true
+    setLoading(true)
+    documentService
+      .load()
+      .then((c) => {
+        if (!alive) return
+        setConfig(c)
+        setSaved(JSON.stringify(c))
+        setError(null)
+      })
+      .catch((e) => alive && setError(errorMessage(e)))
+      .finally(() => alive && setLoading(false))
+    return () => {
+      alive = false
+    }
+  }, [attempt])
+
+  const reload = useCallback(() => setAttempt((n) => n + 1), [])
 
   const dirty = useMemo(() => JSON.stringify(config) !== saved, [config, saved])
 
@@ -133,8 +150,9 @@ export function useDocumentConfig() {
   const save = useCallback(async () => {
     setSaving(true)
     try {
-      await documentService.save(config)
-      setSaved(JSON.stringify(config))
+      const persisted = await documentService.save(config)
+      setConfig(persisted)
+      setSaved(JSON.stringify(persisted))
       setJustSaved(true)
     } finally {
       setSaving(false)
@@ -150,6 +168,8 @@ export function useDocumentConfig() {
     config,
     selected,
     loading,
+    error,
+    reload,
     saving,
     dirty,
     justSaved,

@@ -1,25 +1,32 @@
-import { initialConfig } from './mocks'
+import { http, orgPath } from '@/services/api'
+
 import type { DocumentConfig } from './types'
 
-/**
- * Persistência mockada (localStorage + latência simulada).
- * Para integrar ao backend, troque o corpo destas funções por chamadas HTTP
- * (ex.: GET/PUT /organizations/:id/document-config) mantendo a assinatura.
- */
-const KEY = 'onh:document-config:v1'
+/** Formato trocado com a API (`/organizations/:id/document-config`). */
+type ApiConfig = Omit<DocumentConfig, 'selectedId'> & { isDefault?: boolean }
+
+function fromApi(c: ApiConfig, selectedId?: string): DocumentConfig {
+  const { branding, settings, templates, defaults } = c
+  const keep = selectedId && templates.some((t) => t.id === selectedId)
+  return { branding, settings, templates, defaults, selectedId: keep ? selectedId : defaults.orcamento }
+}
 
 export const documentService = {
   async load(): Promise<DocumentConfig> {
-    try {
-      const raw = localStorage.getItem(KEY)
-      if (raw) return { ...initialConfig, ...(JSON.parse(raw) as DocumentConfig) }
-    } catch {
-      /* armazenamento indisponível: usa o padrão */
-    }
-    return initialConfig
+    const { config } = await http.get<{ config: ApiConfig }>(orgPath('/document-config'))
+    return fromApi(config)
   },
-  async save(config: DocumentConfig): Promise<void> {
-    await new Promise((r) => setTimeout(r, 700))
-    localStorage.setItem(KEY, JSON.stringify(config))
+
+  /** Salva o estado completo e devolve a versão normalizada pelo servidor. */
+  async save(config: DocumentConfig): Promise<DocumentConfig> {
+    const { branding, settings, templates, defaults } = config
+    const { config: saved } = await http.put<{ config: ApiConfig }>(orgPath('/document-config'), {
+      branding,
+      settings,
+      defaults,
+      // `builtIn` é derivado no servidor
+      templates: templates.map((t) => ({ id: t.id, name: t.name, description: t.description, category: t.category, kind: t.kind, title: t.title, sections: t.sections })),
+    })
+    return fromApi(saved, config.selectedId)
   },
 }

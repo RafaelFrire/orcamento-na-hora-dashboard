@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
 
+import { initialConfig } from '@/features/documents/mocks'
+
 // API falsa em memória: responde ao fetch do cliente HTTP com os contratos do backend.
 const ORG = 'org1'
 export const user = { id: 'u1', name: 'Rafael Sousa', email: 'rafael@acme.com' }
@@ -37,7 +39,14 @@ export function makeDb() {
     v2: [{ id: 'm3', direction: 'IN', type: 'text', body: 'Obrigado, vou analisar.', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-19T16:20:00.000Z' }],
   }
   const whatsapp = { connection: null as null | { phoneNumberId: string; wabaId: string; displayPhone: string; verifiedName: string } }
-  return { customers, segments, categories, items, quotes, conversations, messages, whatsapp }
+  const documentConfig = null as null | Record<string, unknown>
+  return { customers, segments, categories, items, quotes, conversations, messages, whatsapp, documentConfig }
+}
+
+/** Configuração de documentos como o backend devolve na primeira leitura (catálogo do sistema). */
+export function documentConfigFixture() {
+  const { branding, settings, templates, defaults } = initialConfig
+  return { branding, settings, templates, defaults, isDefault: true }
 }
 
 type Db = ReturnType<typeof makeDb>
@@ -135,6 +144,12 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
     if (p === '/quote-template' && method === 'GET')
       return json({ template: { companyName: 'Acme Serviços', document: null, phone: null, email: null, address: null, website: null, primaryColor: '#1F4E79', commercialTerms: 'Pagamento em 2x', footerText: null, validityDays: 15, isDefault: true } })
     if (p === '/quote-template' && method === 'PUT') return json({ template: body })
+
+    if (p === '/document-config' && method === 'GET') return json({ config: db.documentConfig ?? documentConfigFixture() })
+    if (p === '/document-config' && method === 'PUT') {
+      db.documentConfig = { ...body, isDefault: false }
+      return json({ config: db.documentConfig })
+    }
 
     // --- WhatsApp ---
     const webhook = { path: '/api/webhooks/whatsapp', verifyTokenConfigured: true, appSecretConfigured: true }

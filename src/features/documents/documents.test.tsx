@@ -1,22 +1,25 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ToastProvider } from '@/components/ui/toast'
-import DocumentsPage from '@/pages/DocumentsPage'
+import { installFakeApi, makeDb } from '@/test/fakeApi'
+import { renderApp } from '@/test/utils'
 
 import { sampleData } from './mocks'
 import { resolveVariables, totals } from './render'
 import { defaultBranding, defaultSettings } from './mocks'
 
-afterEach(() => localStorage.clear())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  localStorage.clear()
+})
 
-const setup = () =>
-  render(
-    <ToastProvider>
-      <DocumentsPage />
-    </ToastProvider>,
-  )
+const setup = () => {
+  const db = makeDb()
+  const api = installFakeApi(db)
+  renderApp('/documentos')
+  return { db, api }
+}
 
 describe('variáveis dinâmicas', () => {
   it('substitui variáveis e preserva as desconhecidas', () => {
@@ -31,7 +34,7 @@ describe('variáveis dinâmicas', () => {
 describe('página de documentos', () => {
   it('altera a cor, reflete na prévia e salva', async () => {
     const user = userEvent.setup()
-    setup()
+    const { db } = setup()
     await screen.findByRole('tab', { name: /identidade visual/i })
     await user.click(screen.getByRole('tab', { name: /identidade visual/i }))
 
@@ -43,7 +46,7 @@ describe('página de documentos', () => {
 
     await user.click(screen.getAllByRole('button', { name: /salvar alterações/i })[0])
     await waitFor(() => expect(screen.getByText('Alterações salvas')).toBeInTheDocument(), { timeout: 2000 })
-    expect(JSON.parse(localStorage.getItem('onh:document-config:v1')!).branding.tradeName).toBe('Nova Marca')
+    expect((db.documentConfig as { branding: { tradeName: string } }).branding.tradeName).toBe('Nova Marca')
   })
 
   it('define um modelo como padrão e insere variável no editor', async () => {
