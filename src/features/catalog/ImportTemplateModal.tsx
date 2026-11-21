@@ -1,4 +1,4 @@
-import { Snowflake } from 'lucide-react'
+import { Hammer, Snowflake } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { ErrorNotice } from '@/components/shared/Pager'
@@ -58,7 +58,7 @@ function Content({ onClose, onImported, preferredKey }: { onClose: () => void; o
 function PackCard({ pack, onChoose }: { pack: TemplatePackSummary; onChoose: () => void }) {
   return (
     <button type="button" onClick={onChoose} className="hover:border-primary hover:bg-accent/40 flex items-start gap-3 rounded-lg border p-4 text-left transition-colors">
-      <Snowflake className="text-primary mt-0.5 size-5 shrink-0" />
+      {pack.key === 'marcenaria' ? <Hammer className="text-primary mt-0.5 size-5 shrink-0" /> : <Snowflake className="text-primary mt-0.5 size-5 shrink-0" />}
       <span>
         <span className="block font-medium">{pack.name}</span>
         <span className="text-muted-foreground block text-sm">{pack.description}</span>
