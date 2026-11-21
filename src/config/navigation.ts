@@ -1,4 +1,5 @@
 import {
+  FileCog,
   FileText,
   LayoutDashboard,
   MessageCircle,
@@ -23,6 +24,7 @@ export const navItems: NavItem[] = [
   { label: 'Catálogo', to: '/catalogo', icon: Package },
   { label: 'WhatsApp', to: '/whatsapp', icon: MessageCircle },
   { label: 'Conversas', to: '/conversas', icon: MessagesSquare },
+  { label: 'Documentos', to: '/documentos', icon: FileCog },
   { label: 'Configurações', to: '/configuracoes', icon: Settings },
 ]
 
@@ -33,5 +35,6 @@ export const routeTitles: Record<string, string> = {
   catalogo: 'Catálogo',
   whatsapp: 'WhatsApp',
   conversas: 'Conversas',
+  documentos: 'Documentos',
   configuracoes: 'Configurações',
 }

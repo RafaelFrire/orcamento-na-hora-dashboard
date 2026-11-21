@@ -6,6 +6,7 @@ import ClientDetailPage from '@/pages/ClientDetailPage'
 import ClientsPage from '@/pages/ClientsPage'
 import ConversationsPage from '@/pages/ConversationsPage'
 import DashboardPage from '@/pages/DashboardPage'
+import DocumentsPage from '@/pages/DocumentsPage'
 import NewQuotePage from '@/pages/NewQuotePage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import QuotesPage from '@/pages/QuotesPage'
@@ -28,6 +29,7 @@ export const routes: RouteObject[] = [
       { path: '/catalogo', element: <CatalogPage /> },
       { path: '/whatsapp', element: <WhatsAppPage /> },
       { path: '/conversas', element: <ConversationsPage /> },
+      { path: '/documentos', element: <DocumentsPage /> },
       { path: '/configuracoes', element: <SettingsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
