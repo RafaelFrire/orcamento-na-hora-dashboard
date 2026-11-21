@@ -98,6 +98,29 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
       return c ? json({ customer: c }) : err(404, 'NOT_FOUND', 'Cliente não encontrado')
     }
 
+    const refrigeracao = {
+      key: 'refrigeracao-climatizacao',
+      name: 'Refrigeração e climatização',
+      description: 'Serviços e peças para assistência técnica.',
+      segmentName: 'Refrigeração e climatização',
+      itemCount: 3,
+      categories: [{ name: 'Manutenção preventiva', count: 2 }, { name: 'Manutenção corretiva', count: 1 }],
+    }
+    const refrigeracaoItems = [
+      { key: 'prev-12k', category: 'Manutenção preventiva', name: 'Manutenção preventiva de split até 12.000 BTUs', description: 'Limpeza e revisão.', unit: 'UN', price: '180.00' },
+      { key: 'higienizacao', category: 'Manutenção preventiva', name: 'Higienização completa de split', description: 'Lavagem.', unit: 'UN', price: '260.00' },
+      { key: 'hora-tecnica', category: 'Manutenção corretiva', name: 'Hora técnica', description: 'Mão de obra.', unit: 'HR', price: '100.00' },
+    ]
+    if (p === '/catalog/templates') return json({ data: [refrigeracao] })
+    if (p === '/catalog/templates/refrigeracao-climatizacao') return json({ pack: { ...refrigeracao, items: refrigeracaoItems } })
+    if (p === '/catalog/templates/refrigeracao-climatizacao/import' && method === 'POST') {
+      const chosen = body.items as Array<{ key: string; basePrice: string }>
+      for (const c of chosen) {
+        const t = refrigeracaoItems.find((x) => x.key === c.key)!
+        db.items.unshift({ id: `t-${t.key}`, segmentId: 's1', categoryId: null, name: t.name, description: t.description, unit: t.unit, basePrice: c.basePrice, active: true, segment: db.segments[0], category: null } as never)
+      }
+      return json({ segment: { id: 's1', name: refrigeracao.segmentName }, created: chosen.length, skipped: [] }, 201)
+    }
     if (p === '/catalog/segments') return json(page(db.segments))
     if (p === '/catalog/categories') return json(page(db.categories))
     if (p === '/catalog/items' && method === 'GET') {

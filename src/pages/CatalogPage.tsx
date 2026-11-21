@@ -1,6 +1,7 @@
-import { MoreHorizontal, Package, Pencil, Search, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Package, Pencil, Search, Sparkles, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
+import { ImportTemplateModal } from '@/features/catalog/ImportTemplateModal'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ErrorNotice, Pager } from '@/components/shared/Pager'
 import { EmptyState, TableSkeleton } from '@/components/shared/States'
@@ -14,19 +15,13 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table'
 import { useToast } from '@/components/ui/toast'
 import { useAuth } from '@/contexts/AuthContext'
 import { errorMessage, useApi, useDebounced } from '@/hooks/useApi'
-import { formatCurrency, unitCodes, unitLabel } from '@/lib/format'
+import { formatCurrency, toPriceString, unitCodes, unitLabel } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/services/api'
 import { catalogService } from '@/services/catalog'
 import type { CatalogItem } from '@/types'
 
 const blank = { name: '', description: '', segmentId: '', categoryId: '', price: '', unit: 'UN', active: true }
-
-/** "49,9" ou "49.90" -> "49.90" (formato decimal exigido pela API); null se inválido. */
-function toPriceString(raw: string) {
-  const n = Number(raw.replace(',', '.'))
-  return Number.isFinite(n) && n >= 0 ? n.toFixed(2) : null
-}
 
 export default function CatalogPage() {
   const toast = useToast()
@@ -38,6 +33,7 @@ export default function CatalogPage() {
   const [category, setCategory] = useState('all')
   const [activeFilter, setActiveFilter] = useState('all')
   const [editing, setEditing] = useState<CatalogItem | 'new' | null>(null)
+  const [importing, setImporting] = useState(false)
   const [deleting, setDeleting] = useState<CatalogItem | null>(null)
   const [form, setForm] = useState(blank)
   const [errors, setErrors] = useState<{ name?: string; price?: string; segment?: string; form?: string }>({})
@@ -154,7 +150,12 @@ export default function CatalogPage() {
       <PageHeader
         title="Catálogo"
         description="Gerencie seus produtos e serviços"
-        actions={canEdit && <Button onClick={() => openForm('new')}>+ Adicionar item</Button>}
+        actions={canEdit && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setImporting(true)}><Sparkles /> Importar modelo</Button>
+            <Button onClick={() => openForm('new')}>+ Adicionar item</Button>
+          </div>
+        )}
       />
       <Card className="gap-0 p-0">
         <div className="flex items-center gap-3 border-b p-4">
@@ -177,7 +178,7 @@ export default function CatalogPage() {
         ) : items.loading && !items.data ? (
           <TableSkeleton />
         ) : rows.length === 0 ? (
-          <EmptyState icon={Package} title="Nenhum item encontrado" description="Cadastre produtos e serviços para usá-los nos orçamentos." action={canEdit && <Button onClick={() => openForm('new')}>+ Adicionar item</Button>} />
+          <EmptyState icon={Package} title="Nenhum item encontrado" description="Cadastre produtos e serviços para usá-los nos orçamentos ou comece com um modelo pronto do seu nicho." action={canEdit && <div className="flex gap-2"><Button variant="outline" onClick={() => setImporting(true)}><Sparkles /> Importar modelo</Button><Button onClick={() => openForm('new')}>+ Adicionar item</Button></div>} />
         ) : (
           <>
             <Table>
@@ -270,6 +271,17 @@ export default function CatalogPage() {
           </div>
         </form>
       </Modal>
+
+      <ImportTemplateModal
+        open={importing}
+        preferredKey={membership?.niche}
+        onOpenChange={setImporting}
+        onImported={() => {
+          items.reload()
+          segments.reload()
+          categories.reload()
+        }}
+      />
 
       <ConfirmDialog
         open={!!deleting}

@@ -14,6 +14,6 @@ export const authService = {
     http.post<AuthSession & { token: string }>('/auth/login', input, false),
   me: () => http.get<AuthSession>('/auth/me'),
   logout: () => http.post<void>('/auth/logout'),
-  createOrganization: (name: string) =>
-    http.post<{ organization: { id: string; name: string; slug: string } }>('/organizations', { name }),
+  createOrganization: (name: string, niche?: string) =>
+    http.post<{ organization: { id: string; name: string; slug: string } }>('/organizations', { name, ...(niche ? { niche } : {}) }),
 }

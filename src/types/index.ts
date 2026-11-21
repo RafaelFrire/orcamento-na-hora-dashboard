@@ -13,6 +13,8 @@ export interface Membership {
   organizationId: string
   name: string
   slug: string
+  /** Segmento escolhido no cadastro (chave do modelo de catálogo). */
+  niche?: string | null
   role: MemberRole
 }
 

@@ -10,7 +10,13 @@ afterEach(() => {
   localStorage.clear()
 })
 
+async function pickSegment() {
+  await userEvent.click(screen.getByRole('radio', { name: /Refrigeração e climatização/ }))
+  await userEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+}
+
 async function fillRegister(email: string) {
+  await pickSegment()
   await userEvent.type(screen.getByLabelText('Nome completo'), 'Rafael Sousa')
   await userEvent.type(screen.getByLabelText('E-mail'), email)
   await userEvent.type(screen.getByLabelText('Senha'), 'senha1234')
@@ -57,10 +63,27 @@ describe('autenticação', () => {
   it('cadastro valida confirmação de senha', async () => {
     installFakeApi(undefined, { authed: false })
     renderApp('/cadastro')
+    await pickSegment()
     await userEvent.type(screen.getByLabelText('Senha'), 'senha1234')
     await userEvent.type(screen.getByLabelText('Confirmar senha'), 'outra1234')
     await userEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
     expect(screen.getByText('As senhas não coincidem.')).toBeInTheDocument()
+  })
+
+  it('cadastro começa pela escolha do segmento, com card de novidades', async () => {
+    installFakeApi(undefined, { authed: false })
+    renderApp('/cadastro')
+    expect(screen.getByText('Qual é o segmento da sua empresa?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Novidades em breve')).toBeInTheDocument()
+    expect(screen.getAllByRole('radio')).toHaveLength(1)
+    const next = screen.getByRole('button', { name: 'Continuar' })
+    expect(next).toBeDisabled()
+    await userEvent.click(screen.getByRole('radio', { name: /Refrigeração e climatização/ }))
+    expect(next).toBeEnabled()
+    await userEvent.click(next)
+    expect(screen.getByLabelText('Nome da empresa')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Alterar/ }))
+    expect(screen.getByRole('radio', { name: /Refrigeração e climatização/ })).toBeChecked()
   })
 
   it('cadastro cria conta, empresa e entra', async () => {
@@ -70,6 +93,7 @@ describe('autenticação', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
     const sent = calls.map((c) => `${c.method} ${c.path}`)
     expect(sent).toEqual(expect.arrayContaining(['POST /auth/register', 'POST /auth/login', 'POST /organizations']))
+    expect(calls.find((c) => c.path === '/organizations')?.body).toMatchObject({ name: 'Acme', niche: 'refrigeracao-climatizacao' })
   })
 
   it('cadastro com e-mail duplicado mostra erro no campo', async () => {
@@ -239,6 +263,27 @@ describe('catálogo', () => {
     expect(await screen.findByText('Item de teste')).toBeInTheDocument()
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/catalog/items'))!
     expect(post.body).toMatchObject({ name: 'Item de teste', basePrice: '50.00', unit: 'UN', segmentId: 's1' })
+  })
+
+  it('importa itens de um modelo do nicho com preços ajustados', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/catalogo')
+    await userEvent.click(await screen.findByRole('button', { name: /Importar modelo/ }))
+    expect(await screen.findByText('Higienização completa de split')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Importar Higienização completa de split' }))
+    const price = screen.getByLabelText('Preço de Hora técnica')
+    await userEvent.clear(price)
+    await userEvent.type(price, '120,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Importar 2 itens' }))
+
+    expect(await screen.findByText(/2 itens importados/)).toBeInTheDocument()
+    const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/import'))!
+    expect((post.body as { items: unknown }).items).toEqual([
+      { key: 'prev-12k', basePrice: '180.00' },
+      { key: 'hora-tecnica', basePrice: '120.50' },
+    ])
+    expect(await screen.findByText('Hora técnica')).toBeInTheDocument()
   })
 })
 

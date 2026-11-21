@@ -10,7 +10,7 @@ interface AuthState {
   /** true enquanto valida o token salvo ao abrir o app. */
   initializing: boolean
   login(email: string, password: string): Promise<void>
-  register(input: { name: string; email: string; password: string; company: string }): Promise<void>
+  register(input: { name: string; email: string; password: string; company: string; niche?: string }): Promise<void>
   logout(): Promise<void>
 }
 
@@ -74,11 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         apply(res)
       },
-      async register({ company, ...account }) {
+      async register({ company, niche, ...account }) {
         await authService.register(account)
         const res = await authService.login({ email: account.email, password: account.password })
         session.setToken(res.token)
-        await authService.createOrganization(company)
+        await authService.createOrganization(company, niche)
         apply(await authService.me())
       },
       async logout() {

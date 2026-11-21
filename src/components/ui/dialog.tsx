@@ -3,6 +3,7 @@ import { Dialog as D } from 'radix-ui'
 import type { ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 interface ModalProps {
   open: boolean
@@ -11,14 +12,16 @@ interface ModalProps {
   description?: string
   children?: ReactNode
   footer?: ReactNode
+  /** Classes extras do conteúdo (ex.: largura maior). */
+  className?: string
 }
 
-export function Modal({ open, onOpenChange, title, description, children, footer }: ModalProps) {
+export function Modal({ open, onOpenChange, title, description, children, footer, className }: ModalProps) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <D.Content className="bg-card fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 shadow-xl">
+        <D.Content className={cn('bg-card fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 shadow-xl', className)}>
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <D.Title className="text-lg font-semibold">{title}</D.Title>

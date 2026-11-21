@@ -60,3 +60,9 @@ export const formatMessageTime = (iso: string) => {
     ? d.toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })
     : day(d).slice(0, 5)
 }
+
+/** "49,9" ou "49.90" -> "49.90" (formato decimal exigido pela API); null se inválido. */
+export function toPriceString(raw: string) {
+  const n = Number(raw.replace(',', '.'))
+  return Number.isFinite(n) && n >= 0 ? n.toFixed(2) : null
+}
