@@ -1,4 +1,4 @@
-import type { Paginated, Quote, WhatsappShare } from '@/types'
+import type { Message, Paginated, Quote } from '@/types'
 
 import { http, orgPath } from './api'
 
@@ -15,6 +15,7 @@ export const quotesService = {
   create: async (input: QuoteInput) => (await http.post<{ quote: Quote }>(orgPath('/quotes'), input)).quote,
   pdf: (id: string, disposition: 'attachment' | 'inline' = 'attachment') =>
     http.blob(orgPath(`/quotes/${id}/pdf`), { disposition }),
-  whatsappShare: async (id: string) =>
-    (await http.get<{ share: WhatsappShare }>(orgPath(`/quotes/${id}/share/whatsapp`))).share,
+  /** Envia o PDF ao WhatsApp do cliente, direto pelo sistema. */
+  sendWhatsapp: (id: string, message?: string) =>
+    http.post<{ conversationId: string | null; message: Message }>(orgPath(`/quotes/${id}/send/whatsapp`), message ? { message } : {}),
 }

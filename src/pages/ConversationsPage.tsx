@@ -1,7 +1,8 @@
-import { MessagesSquare, Search, Send, UserPlus } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { MessagesSquare, Paperclip, Search, Send, UserPlus, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
+import { MessageMedia } from '@/components/shared/MessageMedia'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ErrorNotice } from '@/components/shared/Pager'
 import { EmptyState, TableSkeleton } from '@/components/shared/States'
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
 import { errorMessage, useApi, useDebounced } from '@/hooks/useApi'
+import { ATTACHMENT_ACCEPT, formatFileSize, validateAttachment } from '@/lib/attachments'
 import { formatCurrency, formatMessageTime, formatQuoteNumber, initials } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { customersService } from '@/services/customers'
@@ -18,6 +20,12 @@ import { whatsappService } from '@/services/whatsapp'
 import type { Conversation, Message } from '@/types'
 
 const displayName = (c: Conversation) => c.customer?.name ?? c.contactName ?? `+${c.waContactId}`
+
+/** Legenda do anexo: tira o rótulo automático ("[Imagem] ...") e o nome do arquivo repetido. */
+function captionOf(m: Message) {
+  const body = (m.body ?? '').replace(/^\[[^\]]+\]\s*/, '').trim()
+  return body && body !== m.mediaName ? body : ''
+}
 
 const statusLabel: Record<Message['status'], string> = {
   RECEIVED: '',
@@ -34,6 +42,8 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
   const list = [...older, ...(messages.data?.data ?? [])]
@@ -66,12 +76,14 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
   async function send(e: FormEvent) {
     e.preventDefault()
     const body = text.trim()
-    if (!body || sending) return
+    if ((!body && !file) || sending) return
     setSending(true)
     setSendError('')
     try {
-      await whatsappService.send(id, body)
+      if (file) await whatsappService.sendAttachment(id, file, body)
+      else await whatsappService.send(id, body)
       setText('')
+      setFile(null)
       messages.reload()
       onChanged()
     } catch (err) {
@@ -79,6 +91,15 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
     } finally {
       setSending(false)
     }
+  }
+
+  function pickFile(e: ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0]
+    e.target.value = ''
+    if (!picked) return
+    const problem = validateAttachment(picked)
+    setSendError(problem)
+    setFile(problem ? null : picked)
   }
 
   return (
@@ -101,7 +122,8 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
         {list.map((m) => (
           <div key={m.id} className={cn('flex', m.direction === 'OUT' && 'justify-end')}>
             <div className={cn('max-w-[70%] rounded-2xl px-3.5 py-2 text-sm shadow-sm', m.direction === 'OUT' ? 'bg-gold-soft/70 rounded-br-sm' : 'bg-card rounded-bl-sm')}>
-              <span className="break-words whitespace-pre-wrap">{m.body}</span>
+              {m.hasMedia && <MessageMedia conversationId={id} message={m} />}
+              {(m.hasMedia ? captionOf(m) : m.body) && <span className="break-words whitespace-pre-wrap">{m.hasMedia ? captionOf(m) : m.body}</span>}
               <span className="text-muted-foreground mt-0.5 block text-right text-[10px]">
                 {formatMessageTime(m.sentAt)}
                 {m.direction === 'OUT' && statusLabel[m.status] && ` · ${statusLabel[m.status]}`}
@@ -113,9 +135,19 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
         <div ref={bottom} />
       </div>
       {sendError && <p role="alert" className="text-destructive bg-card border-t px-4 pt-2 text-xs">{sendError}</p>}
+      {file && (
+        <div className="bg-card flex items-center gap-2 border-t px-4 pt-3 text-xs">
+          <Paperclip className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate font-medium">{file.name}</span>
+          <span className="text-muted-foreground shrink-0">{formatFileSize(file.size)}</span>
+          <Button type="button" variant="ghost" size="icon" aria-label="Remover anexo" onClick={() => setFile(null)}><X className="size-4" /></Button>
+        </div>
+      )}
       <form onSubmit={send} className="bg-card flex items-center gap-2 border-t p-3">
-        <Input aria-label="Mensagem" placeholder="Digite uma mensagem" value={text} maxLength={4096} onChange={(e) => setText(e.target.value)} />
-        <Button type="submit" size="icon" aria-label="Enviar" disabled={sending || !text.trim()}><Send className="size-4" /></Button>
+        <input ref={fileInput} type="file" accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Selecionar arquivo" onChange={pickFile} />
+        <Button type="button" variant="ghost" size="icon" aria-label="Anexar arquivo" disabled={sending} onClick={() => fileInput.current?.click()}><Paperclip className="size-4" /></Button>
+        <Input aria-label="Mensagem" placeholder={file ? 'Legenda (opcional)' : 'Digite uma mensagem'} value={text} maxLength={file ? 1024 : 4096} onChange={(e) => setText(e.target.value)} />
+        <Button type="submit" size="icon" aria-label="Enviar" disabled={sending || (!text.trim() && !file)}><Send className="size-4" /></Button>
       </form>
     </section>
   )

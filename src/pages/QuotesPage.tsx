@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SendQuoteModal } from '@/components/shared/SendQuoteModal'
 import { ErrorNotice, Pager } from '@/components/shared/Pager'
 import { EmptyState, TableSkeleton } from '@/components/shared/States'
 import { Button } from '@/components/ui/button'
@@ -53,6 +54,7 @@ function QuoteDetail({ id }: { id: string }) {
 
 export default function QuotesPage() {
   const actions = useQuoteActions()
+  const [sendingQuote, setSendingQuote] = useState<Quote | null>(null)
   const [search, setSearch] = useState('')
   const [period, setPeriod] = useState('all')
   const [page, setPage] = useState(1)
@@ -127,7 +129,7 @@ export default function QuotesPage() {
                             <DropdownMenuItem onSelect={() => actions.viewPdf(row)}><FileText /> Abrir PDF</DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => actions.download(row)}><Download /> Baixar PDF</DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => actions.shareWhatsapp(row)}><Send /> Compartilhar pelo WhatsApp</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setSendingQuote(row)}><Send /> Enviar ao cliente</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TD>
@@ -140,6 +142,8 @@ export default function QuotesPage() {
           </>
         )}
       </Card>
+
+      <SendQuoteModal quote={sendingQuote} onClose={() => setSendingQuote(null)} />
 
       <Modal
         open={!!viewing}

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -150,10 +150,46 @@ describe('gerador de orçamento', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Gerar orçamento' }))
     expect(await screen.findByText(/ORC-0003 gerado!/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Compartilhar pelo WhatsApp/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Enviar ao cliente/ })).toBeInTheDocument()
 
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/quotes'))!
     expect(post.body).toEqual({ customerId: 'c2', items: [{ catalogItemId: 'p1', quantity: '3' }] })
+  })
+
+  it('envia o orçamento ao cliente pelo WhatsApp, sem abrir outra janela', async () => {
+    const db = makeDb()
+    db.whatsapp.connection = { phoneNumberId: '1', wabaId: '2', displayPhone: '+55', verifiedName: 'A' }
+    const { calls } = installFakeApi(db)
+    const open = vi.spyOn(window, 'open')
+    renderApp('/orcamentos')
+    await userEvent.click(await screen.findByRole('button', { name: 'Ações de ORC-0001' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Enviar ao cliente/ }))
+    await userEvent.type(await screen.findByLabelText(/Mensagem/), 'Segue conforme combinado')
+    await userEvent.click(screen.getByRole('button', { name: /Enviar PDF/ }))
+
+    expect(await screen.findByText(/O PDF foi enviado ao cliente/)).toBeInTheDocument()
+    const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/quotes/q1/send/whatsapp'))!
+    expect(post.body).toEqual({ message: 'Segue conforme combinado' })
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('bloqueia o envio quando o cliente do orçamento não tem telefone', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/orcamentos')
+    await userEvent.click(await screen.findByRole('button', { name: 'Ações de ORC-0002' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Enviar ao cliente/ }))
+    expect(await screen.findByText(/não tem telefone cadastrado/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Enviar PDF/ })).toBeDisabled()
+    expect(calls.some((c) => c.path.includes('/send/whatsapp'))).toBe(false)
+  })
+
+  it('mostra o erro da API ao enviar o orçamento sem WhatsApp conectado', async () => {
+    installFakeApi()
+    renderApp('/orcamentos')
+    await userEvent.click(await screen.findByRole('button', { name: 'Ações de ORC-0001' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Enviar ao cliente/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /Enviar PDF/ }))
+    expect(await screen.findByText('Conecte o WhatsApp antes de enviar mensagens')).toBeInTheDocument()
   })
 
   it('envia unitPrice apenas quando o preço foi alterado', async () => {
@@ -319,6 +355,49 @@ describe('conversas (inbox)', () => {
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/v1/messages'))!
     expect(post.body).toEqual({ text: 'Segue o valor' })
     expect(screen.getByLabelText('Mensagem')).toHaveValue('')
+  })
+
+  it('anexa um arquivo e envia pela API de anexos', async () => {
+    const db = makeDb()
+    db.whatsapp.connection = { phoneNumberId: '1', wabaId: '2', displayPhone: '+55', verifiedName: 'A' }
+    const { fetchMock } = installFakeApi(db)
+    renderApp('/conversas')
+    const input = await screen.findByLabelText('Selecionar arquivo')
+    const file = new File(['%PDF-1.4'], 'proposta.pdf', { type: 'application/pdf' })
+    await userEvent.upload(input, file)
+    expect(screen.getByText('proposta.pdf')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Mensagem'), 'Segue a proposta')
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+
+    expect(await screen.findByRole('button', { name: 'Baixar proposta.pdf' })).toBeInTheDocument()
+    expect(screen.getByText('Segue a proposta', { selector: 'span.break-words' })).toBeInTheDocument()
+    const [uploadUrl, uploadInit] = fetchMock.mock.calls.find(([u]) => String(u).includes('/v1/attachments'))!
+    expect(String(uploadUrl)).toContain('filename=proposta.pdf')
+    expect(String(uploadUrl)).toContain('mime=application%2Fpdf')
+    expect(String(uploadUrl)).toContain('caption=Segue+a+proposta')
+    expect((uploadInit?.headers as Record<string, string>)['Content-Type']).toBe('application/octet-stream')
+    expect(screen.queryByRole('button', { name: 'Remover anexo' })).not.toBeInTheDocument()
+  })
+
+  it('recusa arquivo de tipo não suportado sem chamar a API', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/conversas')
+    const input = await screen.findByLabelText('Selecionar arquivo')
+    fireEvent.change(input, { target: { files: [new File(['MZ'], 'virus.exe', { type: 'application/x-msdownload' })] } })
+    expect(await screen.findByText(/Tipo de arquivo não suportado/)).toBeInTheDocument()
+    expect(calls.some((c) => c.path.endsWith('/attachments'))).toBe(false)
+  })
+
+  it('mostra imagens recebidas carregando o anexo autenticado', async () => {
+    const db = makeDb()
+    db.messages.v1.push({ id: 'img1', direction: 'IN', type: 'image', body: '[Imagem] Planta do local', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:40:00.000Z', hasMedia: true, mediaMime: 'image/jpeg', mediaName: null })
+    const { calls } = installFakeApi(db)
+    URL.createObjectURL = vi.fn(() => 'blob:planta')
+    URL.revokeObjectURL = vi.fn()
+    renderApp('/conversas')
+    expect(await screen.findByAltText('[Imagem] Planta do local')).toHaveAttribute('src', 'blob:planta')
+    expect(screen.getByText('Planta do local', { selector: 'span.break-words' })).toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'GET' && c.path.endsWith('/v1/messages/img1/media'))).toBe(true)
   })
 
   it('mostra o erro do servidor quando o envio falha', async () => {

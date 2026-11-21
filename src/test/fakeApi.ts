@@ -29,7 +29,7 @@ export function makeDb() {
     { id: 'v1', waContactId: '5511987654321', contactName: 'Marina Costa', lastMessageAt: '2026-11-20T13:42:00.000Z', lastMessageText: 'Perfeito, pode enviar o orçamento!', unreadCount: 2, customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina@costaarq.com.br' } },
     { id: 'v2', waContactId: '5521999990000', contactName: 'Carlos', lastMessageAt: '2026-11-19T16:20:00.000Z', lastMessageText: 'Obrigado, vou analisar.', unreadCount: 0, customer: null as null | { id: string; name: string; phone: string | null; email: string | null } },
   ]
-  const messages: Record<string, Array<{ id: string; direction: 'IN' | 'OUT'; type: string; body: string; status: string; errorMessage: null; sentAt: string }>> = {
+  const messages: Record<string, Array<{ id: string; direction: 'IN' | 'OUT'; type: string; body: string; status: string; errorMessage: null; sentAt: string; hasMedia?: boolean; mediaMime?: string | null; mediaName?: string | null }>> = {
     v1: [
       { id: 'm1', direction: 'IN', type: 'text', body: 'Bom dia! Preciso de um orçamento.', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:30:00.000Z' },
       { id: 'm2', direction: 'OUT', type: 'text', body: 'Qual a metragem?', status: 'READ', errorMessage: null, sentAt: '2026-11-20T13:35:00.000Z' },
@@ -60,7 +60,7 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
     const url = new URL(String(input), 'http://localhost')
     const path = url.pathname.replace(/^\/api/, '')
     const method = init?.method ?? 'GET'
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     const q = (url.searchParams.get('q') ?? '').toLowerCase()
     calls.push({ method, path, body })
 
@@ -116,6 +116,14 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
       const quote = { id: 'q3', number: 3, customerId: c.id, customer: c, notes: body.notes ?? null, total: lines.reduce((s: number, l: { subtotal: string }) => s + Number(l.subtotal), 0).toFixed(2), createdAt: '2026-11-20T12:00:00.000Z', validUntil: '2026-12-05T12:00:00.000Z', issuer: null, items: lines }
       return json({ quote }, 201)
     }
+    const sm = p.match(/^\/quotes\/([^/]+)\/send\/whatsapp$/)
+    if (sm && method === 'POST') {
+      if (!db.whatsapp.connection) return err(409, 'CONFLICT', 'Conecte o WhatsApp antes de enviar mensagens')
+      const quote = db.quotes.find((x) => x.id === sm[1])
+      if (!quote) return err(404, 'NOT_FOUND', 'Orçamento não encontrado')
+      if (!quote.customer.phone) return err(400, 'VALIDATION_ERROR', 'O cliente não tem um telefone válido para receber o orçamento')
+      return json({ conversationId: 'v1', message: { id: 'qs1', direction: 'OUT', type: 'document', body: body.message ?? 'Segue o orçamento', status: 'SENT', errorMessage: null, sentAt: '2026-11-20T14:00:00.000Z', hasMedia: true, mediaMime: 'application/pdf', mediaName: 'ORC-0001.pdf' } }, 201)
+    }
     const qm = p.match(/^\/quotes\/([^/]+)$/)
     if (qm) {
       const quote = db.quotes.find((x) => x.id === qm[1])
@@ -145,6 +153,17 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
       const term = q
       return json(page(db.conversations.filter((c) => !term || (c.contactName ?? '').toLowerCase().includes(term) || (c.customer?.name ?? '').toLowerCase().includes(term))))
     }
+    const am = p.match(/^\/whatsapp\/conversations\/([^/]+)\/attachments$/)
+    if (am && method === 'POST') {
+      if (!db.whatsapp.connection) return err(409, 'CONFLICT', 'Conecte o WhatsApp antes de enviar mensagens')
+      const name = url.searchParams.get('filename')!
+      const caption = url.searchParams.get('caption')
+      const msg = { id: `a${Date.now()}`, direction: 'OUT' as const, type: 'document', body: caption || name, status: 'SENT', errorMessage: null, sentAt: '2026-11-20T14:05:00.000Z', hasMedia: true, mediaMime: url.searchParams.get('mime'), mediaName: name }
+      db.messages[am[1]].push(msg)
+      return json({ message: msg }, 201)
+    }
+    if (/^\/whatsapp\/conversations\/[^/]+\/messages\/[^/]+\/media$/.test(p) && method === 'GET')
+      return new Response(new Blob(['conteudo']), { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
     const mm = p.match(/^\/whatsapp\/conversations\/([^/]+)\/messages$/)
     if (mm && method === 'GET') return json({ data: db.messages[mm[1]] ?? [], hasMore: false })
     if (mm && method === 'POST') {

@@ -144,4 +144,7 @@ export interface Message {
   status: MessageStatus
   errorMessage: string | null
   sentAt: string
+  hasMedia: boolean
+  mediaMime: string | null
+  mediaName: string | null
 }
