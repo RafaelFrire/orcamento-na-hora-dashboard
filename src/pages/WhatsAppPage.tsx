@@ -1,69 +1,91 @@
-import { CheckCircle2, Info, Loader2, MessageCircle, Send, FileText, Smartphone } from 'lucide-react'
-import { useState } from 'react'
+import { CheckCircle2, Info, Loader2, MessageCircle, MessagesSquare } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { ErrorNotice } from '@/components/shared/Pager'
+import { TableSkeleton } from '@/components/shared/States'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Field } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useAuth } from '@/contexts/AuthContext'
+import { errorMessage, useApi } from '@/hooks/useApi'
+import { API_URL, ApiError } from '@/services/api'
+import { whatsappService } from '@/services/whatsapp'
+
+const blank = { phoneNumberId: '', wabaId: '', accessToken: '' }
 
 export default function WhatsAppPage() {
   const toast = useToast()
-  const [state, setState] = useState<'off' | 'connecting' | 'on'>('off')
+  const { membership } = useAuth()
+  const canEdit = membership?.role === 'OWNER' || membership?.role === 'ADMIN'
+  const { data: connection, error, loading, reload } = useApi(() => whatsappService.connection(), [])
+  const [form, setForm] = useState(blank)
+  const [errors, setErrors] = useState<Partial<typeof blank & { form: string }>>({})
+  const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [confirm, setConfirm] = useState(false)
 
-  function connect() {
-    setState('connecting')
-    setTimeout(() => {
-      setState('on')
+  const connected = connection?.connected === true && !editing
+  const webhookUrl = `${API_URL || window.location.origin}${connection?.webhook.path ?? '/api/webhooks/whatsapp'}`
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    const n: typeof errors = {}
+    if (!/^\d{5,30}$/.test(form.phoneNumberId.trim())) n.phoneNumberId = 'Informe o Phone number ID (somente dígitos).'
+    if (!/^\d{5,30}$/.test(form.wabaId.trim())) n.wabaId = 'Informe o ID da conta do WhatsApp Business (somente dígitos).'
+    if (form.accessToken.trim().length < 20) n.accessToken = 'Informe o token de acesso.'
+    setErrors(n)
+    if (Object.keys(n).length) return
+
+    setSaving(true)
+    try {
+      await whatsappService.connect({
+        phoneNumberId: form.phoneNumberId.trim(),
+        wabaId: form.wabaId.trim(),
+        accessToken: form.accessToken.trim(),
+      })
+      setForm(blank)
+      setEditing(false)
       toast('WhatsApp conectado com sucesso.')
-    }, import.meta.env.MODE === 'test' ? 0 : 1200)
+      reload()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400 && err.details?.length) {
+        setErrors({
+          phoneNumberId: err.fieldMessage('phoneNumberId'),
+          wabaId: err.fieldMessage('wabaId'),
+          accessToken: err.fieldMessage('accessToken'),
+        })
+      } else {
+        setErrors({ form: errorMessage(err) })
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function disconnect() {
+    try {
+      await whatsappService.disconnect()
+      toast('WhatsApp desconectado.')
+      reload()
+    } catch (err) {
+      toast(errorMessage(err))
+    }
   }
 
   return (
     <>
-      <PageHeader title="WhatsApp" description="Envie seus orçamentos direto para o cliente" />
+      <PageHeader title="WhatsApp" description="Conecte o número da empresa para atender e orçar pelo painel" />
 
-      <div className="bg-accent mb-5 flex items-start gap-3 rounded-lg border p-4 text-sm">
-        <Info className="text-primary mt-0.5 size-4 shrink-0" />
-        <p>
-          <strong>No MVP, o compartilhamento é manual:</strong> ao clicar em “Compartilhar pelo WhatsApp”, abrimos o
-          WhatsApp com o orçamento pronto para você enviar. A leitura automática de conversas e a sincronização ainda
-          <strong> não estão disponíveis</strong>.
-        </p>
-      </div>
-
-      {state !== 'on' ? (
-        <Card className="items-center gap-4 p-12 text-center">
-          <div className="bg-success/15 text-success flex size-16 items-center justify-center rounded-full">
-            <MessageCircle className="size-8" />
-          </div>
-          <h2 className="text-xl font-semibold">Conecte seu WhatsApp</h2>
-          <p className="text-muted-foreground max-w-md text-sm">
-            Vincule o número da sua empresa para compartilhar orçamentos com poucos cliques e manter tudo
-            organizado em um só lugar.
-          </p>
-          <Button onClick={connect} disabled={state === 'connecting'}>
-            {state === 'connecting' && <Loader2 className="size-4 animate-spin" />} Conectar WhatsApp
-          </Button>
-          <ol className="mt-4 grid max-w-2xl grid-cols-3 gap-4 text-left text-sm">
-            {[
-              [Smartphone, 'Conecte o número', 'Autorize o número da empresa.'],
-              [FileText, 'Gere o orçamento', 'Monte a proposta e baixe o PDF.'],
-              [Send, 'Compartilhe', 'Envie para o cliente pelo WhatsApp.'],
-            ].map(([Icon, t, d], i) => {
-              const I = Icon as typeof Send
-              return (
-                <li key={i} className="rounded-lg border p-4">
-                  <I className="text-primary mb-2 size-5" />
-                  <p className="font-medium">{t as string}</p>
-                  <p className="text-muted-foreground text-xs">{d as string}</p>
-                </li>
-              )
-            })}
-          </ol>
-        </Card>
-      ) : (
+      {error ? (
+        <Card><ErrorNotice message={error} onRetry={reload} /></Card>
+      ) : loading && !connection ? (
+        <Card><TableSkeleton rows={3} /></Card>
+      ) : connected ? (
         <Card className="gap-5 p-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -72,16 +94,68 @@ export default function WhatsAppPage() {
                 <p className="flex items-center gap-2 font-semibold">
                   Conexão ativa <span className="bg-success size-2 animate-pulse rounded-full" />
                 </p>
-                <p className="text-muted-foreground text-sm">Pronto para compartilhar orçamentos.</p>
+                <p className="text-muted-foreground text-sm">Mensagens recebidas aparecem em Conversas.</p>
               </div>
             </div>
-            <Button variant="outline" onClick={() => setConfirm(true)}>Desconectar</Button>
+            <div className="flex gap-2">
+              <Button asChild variant="outline"><Link to="/conversas"><MessagesSquare /> Abrir conversas</Link></Button>
+              {canEdit && <Button variant="outline" onClick={() => setEditing(true)}>Atualizar credenciais</Button>}
+              {canEdit && <Button variant="outline" onClick={() => setConfirm(true)}>Desconectar</Button>}
+            </div>
           </div>
           <dl className="grid grid-cols-2 gap-4 border-t pt-5 text-sm">
-            <div><dt className="text-muted-foreground">Número conectado</dt><dd className="font-medium">+55 (11) 98765-0000</dd></div>
-            <div><dt className="text-muted-foreground">Nome da conta</dt><dd className="font-medium">Acme Serviços</dd></div>
+            <div><dt className="text-muted-foreground">Número conectado</dt><dd className="font-medium">{connection?.displayPhone ?? '—'}</dd></div>
+            <div><dt className="text-muted-foreground">Nome verificado</dt><dd className="font-medium">{connection?.verifiedName ?? '—'}</dd></div>
+            <div><dt className="text-muted-foreground">Phone number ID</dt><dd className="font-mono text-xs">{connection?.phoneNumberId}</dd></div>
+            <div><dt className="text-muted-foreground">WhatsApp Business Account ID</dt><dd className="font-mono text-xs">{connection?.wabaId}</dd></div>
           </dl>
-          <p className="text-muted-foreground text-xs">Sincronização de conversas: em breve.</p>
+        </Card>
+      ) : (
+        <Card className="gap-5 p-8">
+          <div className="flex items-center gap-3">
+            <span className="bg-success/15 text-success flex size-12 items-center justify-center rounded-full"><MessageCircle className="size-6" /></span>
+            <div>
+              <h2 className="text-lg font-semibold">{editing ? 'Atualizar credenciais' : 'Conecte seu WhatsApp Business'}</h2>
+              <p className="text-muted-foreground text-sm">Use os dados do seu app na Meta (WhatsApp &gt; Configuração da API). O token fica guardado criptografado no servidor.</p>
+            </div>
+          </div>
+          {!canEdit ? (
+            <p className="text-muted-foreground text-sm">Peça a um proprietário ou administrador para conectar o WhatsApp.</p>
+          ) : (
+            <form onSubmit={submit} noValidate className="max-w-xl space-y-4">
+              {errors.form && <div role="alert" className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">{errors.form}</div>}
+              <Field label="Phone number ID" htmlFor="wa-phone" error={errors.phoneNumberId}>
+                <Input id="wa-phone" inputMode="numeric" value={form.phoneNumberId} onChange={(e) => setForm({ ...form, phoneNumberId: e.target.value })} />
+              </Field>
+              <Field label="WhatsApp Business Account ID" htmlFor="wa-waba" error={errors.wabaId}>
+                <Input id="wa-waba" inputMode="numeric" value={form.wabaId} onChange={(e) => setForm({ ...form, wabaId: e.target.value })} />
+              </Field>
+              <Field label="Token de acesso" htmlFor="wa-token" error={errors.accessToken}>
+                <Input id="wa-token" type="password" autoComplete="off" value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} />
+              </Field>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={saving}>{saving && <Loader2 className="size-4 animate-spin" />} Conectar WhatsApp</Button>
+                {editing && <Button type="button" variant="outline" onClick={() => { setEditing(false); setErrors({}) }}>Cancelar</Button>}
+              </div>
+            </form>
+          )}
+        </Card>
+      )}
+
+      {connection && (
+        <Card className="mt-5 gap-3 p-6">
+          <h2 className="flex items-center gap-2 font-semibold"><Info className="text-primary size-4" /> Webhook na Meta</h2>
+          <p className="text-muted-foreground text-sm">
+            No painel do app (WhatsApp &gt; Configuração), cadastre o webhook abaixo, informe o mesmo token de verificação do servidor
+            e assine os campos <code>messages</code> e, se usar Coexistence, <code>smb_message_echoes</code>.
+          </p>
+          <dl className="grid grid-cols-[180px_1fr] gap-y-2 text-sm">
+            <dt className="text-muted-foreground">URL de retorno</dt><dd className="font-mono text-xs break-all">{webhookUrl}</dd>
+            <dt className="text-muted-foreground">Token de verificação</dt>
+            <dd>{connection.webhook.verifyTokenConfigured ? 'Configurado no servidor (META_VERIFY_TOKEN)' : <span className="text-destructive">Não configurado no servidor</span>}</dd>
+            <dt className="text-muted-foreground">Segredo do app</dt>
+            <dd>{connection.webhook.appSecretConfigured ? 'Configurado no servidor (META_APP_SECRET)' : <span className="text-destructive">Não configurado no servidor</span>}</dd>
+          </dl>
         </Card>
       )}
 
@@ -89,9 +163,9 @@ export default function WhatsAppPage() {
         open={confirm}
         onOpenChange={setConfirm}
         title="Desconectar WhatsApp?"
-        description="Você poderá reconectar a qualquer momento."
+        description="As conversas já recebidas continuam salvas. Você poderá reconectar a qualquer momento."
         confirmLabel="Desconectar"
-        onConfirm={() => { setState('off'); toast('WhatsApp desconectado.') }}
+        onConfirm={disconnect}
       />
     </>
   )

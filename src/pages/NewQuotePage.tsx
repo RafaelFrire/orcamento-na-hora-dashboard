@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom'
 
 import { ClientFormModal } from '@/components/shared/ClientFormModal'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { SendQuoteModal } from '@/components/shared/SendQuoteModal'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Textarea } from '@/components/ui/form'
@@ -16,7 +17,7 @@ import { catalogService } from '@/services/catalog'
 import { customersService } from '@/services/customers'
 import { quotesService } from '@/services/quotes'
 import { templateService } from '@/services/template'
-import type { CatalogItem, Customer, Quote } from '@/types'
+import type { CatalogItem, ConversationCustomer, Quote } from '@/types'
 
 interface DraftItem {
   key: string
@@ -43,8 +44,8 @@ function SectionCard({ step, title, children }: { step: number; title: string; c
 
 export default function NewQuotePage() {
   const actions = useQuoteActions()
-  const preset = (useLocation().state as { customer?: Customer } | null)?.customer ?? null
-  const [client, setClient] = useState<Customer | null>(preset)
+  const preset = (useLocation().state as { customer?: ConversationCustomer } | null)?.customer ?? null
+  const [client, setClient] = useState<ConversationCustomer | null>(preset)
   const [clientQuery, setClientQuery] = useState('')
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -53,6 +54,7 @@ export default function NewQuotePage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [created, setCreated] = useState<Quote | null>(null)
+  const [sending, setSending] = useState(false)
 
   const cq = useDebounced(clientQuery.trim())
   const pq = useDebounced(catalogQuery.trim())
@@ -117,11 +119,12 @@ export default function NewQuotePage() {
         <div className="flex flex-wrap justify-center gap-2">
           <Button variant="outline" onClick={() => actions.viewPdf(created)}><Eye /> Visualizar PDF</Button>
           <Button variant="outline" onClick={() => actions.download(created)}><Download /> Baixar PDF</Button>
-          <Button onClick={() => actions.shareWhatsapp(created)}><Send /> Compartilhar pelo WhatsApp</Button>
+          <Button onClick={() => setSending(true)}><Send /> Enviar ao cliente</Button>
         </div>
         <Link to="/orcamentos" className="text-muted-foreground hover:text-foreground mt-2 text-sm underline-offset-4 hover:underline">
           Voltar para orçamentos
         </Link>
+        <SendQuoteModal quote={sending ? created : null} onClose={() => setSending(false)} />
       </Card>
     )
   }

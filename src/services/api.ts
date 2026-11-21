@@ -92,18 +92,19 @@ async function toApiError(res: Response) {
   )
 }
 
-async function send(method: string, path: string, opts: { query?: Query; body?: unknown; auth?: boolean } = {}) {
+async function send(method: string, path: string, opts: { query?: Query; body?: unknown; raw?: Blob; auth?: boolean } = {}) {
   const headers: Record<string, string> = {}
   const token = session.getToken()
   if (opts.auth !== false && token) headers.Authorization = `Bearer ${token}`
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+  if (opts.raw) headers['Content-Type'] = 'application/octet-stream'
 
   let res: Response
   try {
     res = await fetch(buildUrl(path, opts.query), {
       method,
       headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
     })
   } catch {
     throw new ApiError(0, 'NETWORK', 'Não foi possível conectar ao servidor. Verifique sua conexão.')
@@ -130,6 +131,8 @@ export const http = {
   patch: <T>(path: string, body?: unknown) => json<T>('PATCH', path, { body: body ?? {} }),
   put: <T>(path: string, body?: unknown) => json<T>('PUT', path, { body: body ?? {} }),
   delete: <T>(path: string) => json<T>('DELETE', path),
+  /** Envia um arquivo como corpo binário; os metadados vão na query. */
+  upload: <T>(path: string, file: Blob, query?: Query) => json<T>('POST', path, { raw: file, query }),
   /** Baixa um binário autenticado (ex.: PDF). */
   async blob(path: string, query?: Query) {
     const res = await send('GET', path, { query })
