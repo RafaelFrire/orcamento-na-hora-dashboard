@@ -5,6 +5,7 @@ import { ToastProvider } from '@/components/ui/toast'
 import { useAuth } from '@/contexts/AuthContext'
 
 import { Header } from './Header'
+import { PlanBanner } from './PlanBanner'
 import { Sidebar } from './Sidebar'
 
 export function AppLayout() {
@@ -26,6 +27,7 @@ export function AppLayout() {
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Header />
+          <PlanBanner />
           <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-8">
             <Outlet />
           </main>

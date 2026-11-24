@@ -150,3 +150,36 @@ export interface Message {
   mediaMime: string | null
   mediaName: string | null
 }
+
+// --- Rascunho de orçamento com IA ---
+// A IA nunca devolve preço: o valor de cada item vem do catálogo.
+export interface AiDraftItem {
+  catalogItemId: string
+  name: string
+  /** null quando o pedido não informou a quantidade. */
+  quantity: string | null
+  unit: string
+  confidence: number
+  sourceText: string
+}
+
+export interface AiDraftUnmatched {
+  text: string
+  reason: 'NO_CATALOG_MATCH'
+  /** Ids de itens do catálogo parecidos com o trecho. */
+  suggestions: string[]
+}
+
+export interface AiQuoteDraft {
+  customer: {
+    status: 'matched' | 'suggested_new' | 'unknown'
+    customerId: string | null
+    name: string | null
+    phone: string | null
+    confidence: number
+  }
+  items: AiDraftItem[]
+  unmatched: AiDraftUnmatched[]
+  notes: string | null
+  warnings: string[]
+}

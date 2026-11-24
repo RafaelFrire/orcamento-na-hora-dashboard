@@ -40,7 +40,8 @@ export function makeDb() {
   }
   const whatsapp = { connection: null as null | { phoneNumberId: string; wabaId: string; displayPhone: string; verifiedName: string } }
   const documentConfig = null as null | Record<string, unknown>
-  return { customers, segments, categories, items, quotes, conversations, messages, whatsapp, documentConfig }
+  const aiDrafts: unknown[] = []
+  return { aiDrafts, customers, segments, categories, items, quotes, conversations, messages, whatsapp, documentConfig }
 }
 
 /** Configuração de documentos como o backend devolve na primeira leitura (catálogo do sistema). */
@@ -86,6 +87,24 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
     if (!m) return err(404, 'NOT_FOUND', 'Rota inexistente')
     const p = m[1]
 
+    if (p === '/plan') {
+      return json({ plan: 'HIGH', label: 'High', expired: false, trialEndsAt: null, daysLeft: null, periodStart: '2026-11-01T00:00:00.000Z', quotes: { used: 2, limit: 500 }, users: { used: 1, limit: 5 } })
+    }
+    if (p === '/quotes/ai-draft' && method === 'POST') {
+      if (String(body.text).includes('quebrar')) return err(502, 'AI_UNAVAILABLE', 'A IA está indisponível no momento. Tente novamente.')
+      db.aiDrafts.push(body)
+      return json({
+        draft: {
+          customer: { status: 'matched', customerId: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', confidence: 0.95 },
+          items: [{ catalogItemId: 'p1', name: 'Consultoria técnica', quantity: '3', unit: 'HR', confidence: 0.92, sourceText: '3 horas de consultoria' }],
+          unmatched: [{ text: 'um drone', reason: 'NO_CATALOG_MATCH', suggestions: [] }],
+          notes: 'Entrega até dia 10.',
+          warnings: [],
+        },
+        usage: { aiRequestId: 'ai1' },
+      })
+    }
+    if (p === '/quotes/ai-draft/ai1/discard' && method === 'POST') return json(null, 204)
     if (p === '/customers' && method === 'GET') return json(page(db.customers.filter((c) => c.name.toLowerCase().includes(q))))
     if (p === '/customers' && method === 'POST') {
       const c = { id: `c${db.customers.length + 1}`, name: body.name, phone: body.phone ?? null, email: body.email ?? null, createdAt: '2026-11-20T12:00:00.000Z' }

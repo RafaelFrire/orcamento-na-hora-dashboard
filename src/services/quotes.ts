@@ -5,6 +5,8 @@ import { http, orgPath } from './api'
 export interface QuoteInput {
   customerId: string
   notes?: string
+  /** Rascunho de IA que originou o orçamento (auditoria). */
+  aiDraftId?: string
   items: { catalogItemId: string; quantity: string; unitPrice?: string }[]
 }
 

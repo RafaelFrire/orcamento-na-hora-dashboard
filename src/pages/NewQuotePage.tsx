@@ -1,10 +1,11 @@
-import { CheckCircle2, Download, Eye, Plus, Search, Send, Trash2, UserPlus } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, Eye, Plus, Search, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 import { ClientFormModal } from '@/components/shared/ClientFormModal'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SendQuoteModal } from '@/components/shared/SendQuoteModal'
+import { AiBadge, AiDraftBox } from '@/features/ai-quote/AiDraftBox'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Textarea } from '@/components/ui/form'
@@ -13,11 +14,12 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table'
 import { errorMessage, useApi, useDebounced } from '@/hooks/useApi'
 import { useQuoteActions } from '@/hooks/useQuoteActions'
 import { formatCurrency, formatQuoteNumber, lineTotal, unitLabel } from '@/lib/format'
+import { aiService } from '@/services/ai'
 import { catalogService } from '@/services/catalog'
 import { customersService } from '@/services/customers'
 import { quotesService } from '@/services/quotes'
 import { templateService } from '@/services/template'
-import type { CatalogItem, ConversationCustomer, Quote } from '@/types'
+import type { AiDraftUnmatched, AiQuoteDraft, CatalogItem, ConversationCustomer, Quote } from '@/types'
 
 interface DraftItem {
   key: string
@@ -28,6 +30,10 @@ interface DraftItem {
   basePrice: number
   quantity: number
   unitPrice: number
+  /** Veio da IA e ainda não foi conferido pelo dono. */
+  ai?: boolean
+  /** Baixa confiança: precisa de confirmação explícita. */
+  needsReview?: boolean
 }
 
 function SectionCard({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
@@ -44,8 +50,16 @@ function SectionCard({ step, title, children }: { step: number; title: string; c
 
 export default function NewQuotePage() {
   const actions = useQuoteActions()
-  const preset = (useLocation().state as { customer?: ConversationCustomer } | null)?.customer ?? null
+  const navState = useLocation().state as { customer?: ConversationCustomer; aiText?: string } | null
+  const preset = navState?.customer ?? null
   const [client, setClient] = useState<ConversationCustomer | null>(preset)
+  // --- Rascunho de IA: nada é salvo até o clique em "Gerar orçamento". ---
+  const [aiDraftId, setAiDraftId] = useState<string | null>(null)
+  const [clientFromAi, setClientFromAi] = useState(false)
+  const [notesFromAi, setNotesFromAi] = useState(false)
+  const [unmatched, setUnmatched] = useState<AiDraftUnmatched[]>([])
+  const [suggestedClient, setSuggestedClient] = useState<{ name: string; phone: string } | null>(null)
+  const [suggestionKey, setSuggestionKey] = useState(0)
   const [clientQuery, setClientQuery] = useState('')
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -82,18 +96,68 @@ export default function NewQuotePage() {
     setError('')
   }
 
+  // Editar um campo equivale a conferi-lo: o selo da IA some.
   const patch = (key: string, p: Partial<DraftItem>) =>
-    setItems((s) => s.map((i) => (i.key === key ? { ...i, ...p } : i)))
+    setItems((s) => s.map((i) => (i.key === key ? { ...i, ai: false, needsReview: false, ...p } : i)))
+
+  async function applyDraft(draft: AiQuoteDraft, newDraftId: string) {
+    // O servidor só devolve ids do catálogo; os preços vêm do catálogo (a IA nunca informa preço).
+    const resolved = await Promise.all(
+      draft.items.map(async (d) => {
+        const found = (await catalogService.items({ q: d.name, active: true, pageSize: 10 })).data.find((c) => c.id === d.catalogItemId)
+        return { d, found }
+      }),
+    )
+    const lost: AiDraftUnmatched[] = resolved.filter((r) => !r.found).map((r) => ({ text: r.d.sourceText, reason: 'NO_CATALOG_MATCH', suggestions: [] }))
+    const rows: DraftItem[] = resolved.flatMap(({ d, found }, n) =>
+      found
+        ? [{
+            key: `${found.id}-ai-${Date.now()}-${n}`,
+            catalogItemId: found.id,
+            name: found.name,
+            description: found.description ?? '',
+            unit: found.unit,
+            basePrice: Number(found.basePrice),
+            quantity: d.quantity ? Number(d.quantity) : 0,
+            unitPrice: Number(found.basePrice),
+            ai: true,
+            needsReview: d.confidence < 0.7,
+          }]
+        : [],
+    )
+
+    // Um novo rascunho substitui o anterior (o antigo é descartado para a auditoria).
+    if (aiDraftId) void aiService.discard(aiDraftId).catch(() => undefined)
+    setAiDraftId(newDraftId)
+    setItems(rows)
+    setUnmatched([...draft.unmatched, ...lost])
+    setNotes(draft.notes ?? '')
+    setNotesFromAi(!!draft.notes)
+
+    const c = draft.customer
+    setSuggestedClient(null)
+    if (c.status === 'matched' && c.customerId && c.name) {
+      setClient({ id: c.customerId, name: c.name, phone: c.phone, email: null })
+      setClientFromAi(!preset || preset.id !== c.customerId)
+    } else if (c.status === 'suggested_new' && c.name) {
+      setSuggestedClient({ name: c.name, phone: c.phone ?? '' })
+      setSuggestionKey((k) => k + 1)
+    }
+    setError('')
+  }
 
   async function save() {
     if (!client) return setError('Selecione um cliente para continuar.')
     if (items.length === 0) return setError('Adicione ao menos um item ao orçamento.')
     if (items.some((i) => !(i.quantity > 0))) return setError('A quantidade de cada item deve ser maior que zero.')
+    if (unmatched.length > 0) return setError('Resolva ou descarte os itens que a IA não encontrou no catálogo.')
+    if (items.some((i) => i.needsReview)) return setError('Confirme os itens marcados como baixa confiança da IA.')
     setError('')
     setSaving(true)
     try {
       const quote = await quotesService.create({
         customerId: client.id,
+        ...(aiDraftId ? { aiDraftId } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         items: items.map((i) => ({
           catalogItemId: i.catalogItemId,
@@ -134,16 +198,25 @@ export default function NewQuotePage() {
       <PageHeader title="Novo orçamento" description="Monte a proposta em poucos passos." />
       <div className="grid grid-cols-[1fr_320px] items-start gap-6">
         <div className="space-y-5">
+          <AiDraftBox initialText={navState?.aiText ?? ""} customerId={client?.id} source={navState?.aiText ? "WHATSAPP" : "MANUAL"} onDraft={applyDraft} />
+
           <SectionCard step={1} title="Cliente">
             {client ? (
               <div className="bg-accent flex items-center justify-between rounded-lg p-4">
                 <div className="text-sm">
-                  <p className="font-medium">{client.name}</p>
+                  <p className="flex items-center gap-2 font-medium">{client.name}{clientFromAi && <AiBadge />}</p>
                   <p className="text-muted-foreground">{[client.phone, client.email].filter(Boolean).join(' · ') || 'Sem contato cadastrado'}</p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setClient(null)}>Trocar</Button>
+                <Button variant="ghost" size="sm" onClick={() => { setClient(null); setClientFromAi(false) }}>Trocar</Button>
               </div>
             ) : (
+              <>
+              {suggestedClient && (
+                <div className="bg-warning/15 mb-3 flex items-center justify-between gap-3 rounded-lg p-3 text-sm">
+                  <span className="flex items-center gap-2"><AiBadge /> A IA identificou um cliente novo: <strong>{suggestedClient.name}</strong></span>
+                  <Button size="sm" variant="outline" onClick={() => setNewClientOpen(true)}><UserPlus /> Cadastrar cliente</Button>
+                </div>
+              )}
               <div className="flex gap-3">
                 <div className="relative flex-1">
                   <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
@@ -164,6 +237,7 @@ export default function NewQuotePage() {
                 </div>
                 <Button variant="outline" onClick={() => setNewClientOpen(true)}><UserPlus /> Novo cliente</Button>
               </div>
+              </>
             )}
           </SectionCard>
 
@@ -190,6 +264,22 @@ export default function NewQuotePage() {
           </SectionCard>
 
           <SectionCard step={3} title="Itens do orçamento">
+            {unmatched.length > 0 && (
+              <div role="region" aria-label="Pendências da IA" className="bg-warning/15 space-y-2 rounded-lg p-3 text-sm">
+                <p className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4" /> A IA não encontrou estes itens no catálogo</p>
+                <ul className="space-y-1">
+                  {unmatched.map((u, n) => (
+                    <li key={`${u.text}-${n}`} className="flex items-center justify-between gap-3">
+                      <span>“{u.text}”</span>
+                      <span className="flex gap-1">
+                        <Button size="sm" variant="outline" onClick={() => setCatalogQuery(u.text)}>Buscar no catálogo</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setUnmatched((s) => s.filter((_, k) => k !== n))}>Descartar</Button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {items.length === 0 ? (
               <p className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">Nenhum item adicionado ainda.</p>
             ) : (
@@ -201,8 +291,18 @@ export default function NewQuotePage() {
                 </THead>
                 <TBody>
                   {items.map((i) => (
-                    <TR key={i.key}>
-                      <TD className="px-2"><p className="font-medium">{i.name}</p><p className="text-muted-foreground text-xs">{i.description}</p></TD>
+                    <TR key={i.key} className={i.needsReview ? 'bg-warning/15' : undefined}>
+                      <TD className="px-2">
+                        <p className="flex flex-wrap items-center gap-2 font-medium">{i.name}{i.ai && <AiBadge />}</p>
+                        <p className="text-muted-foreground text-xs">{i.description}</p>
+                        {i.needsReview && (
+                          <p className="mt-1 flex items-center gap-2 text-xs">
+                            <AlertTriangle className="size-3" /> Baixa confiança — confira este item.
+                            <Button size="sm" variant="outline" aria-label={`Confirmar ${i.name}`} onClick={() => setItems((s) => s.map((x) => (x.key === i.key ? { ...x, needsReview: false } : x)))}>Confirmar</Button>
+                          </p>
+                        )}
+                        {i.ai && i.quantity === 0 && <p className="text-destructive mt-1 text-xs">O pedido não informou a quantidade.</p>}
+                      </TD>
                       <TD className="px-2"><Input type="number" min={0} step="any" aria-label={`Quantidade de ${i.name}`} value={i.quantity} onChange={(e) => patch(i.key, { quantity: Math.max(0, Number(e.target.value)) })} /></TD>
                       <TD className="text-muted-foreground px-2">{unitLabel(i.unit)}</TD>
                       <TD className="px-2"><Input type="number" min={0} step="0.01" aria-label={`Valor unitário de ${i.name}`} value={i.unitPrice} onChange={(e) => patch(i.key, { unitPrice: Math.max(0, Number(e.target.value)) })} /></TD>
@@ -226,8 +326,8 @@ export default function NewQuotePage() {
               )}
               <p className="mt-1 text-xs">Validade e condições saem do modelo de orçamento — ajuste em <Link to="/configuracoes" className="underline">Configurações</Link>.</p>
             </div>
-            <Field label="Observações" htmlFor="notes">
-              <Textarea id="notes" maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Informações adicionais para o cliente" />
+            <Field label={notesFromAi ? "Observações (sugerido pela IA)" : "Observações"} htmlFor="notes">
+              <Textarea id="notes" maxLength={2000} value={notes} onChange={(e) => { setNotes(e.target.value); setNotesFromAi(false) }} placeholder="Informações adicionais para o cliente" />
             </Field>
           </SectionCard>
         </div>
@@ -247,7 +347,7 @@ export default function NewQuotePage() {
           </Card>
         </aside>
       </div>
-      <ClientFormModal open={newClientOpen} onOpenChange={setNewClientOpen} onSaved={(c) => { setClient(c); setError('') }} />
+      <ClientFormModal key={suggestionKey} initial={suggestedClient ?? undefined} open={newClientOpen} onOpenChange={setNewClientOpen} onSaved={(c) => { setClient(c); setSuggestedClient(null); setClientFromAi(false); setError('') }} />
     </>
   )
 }

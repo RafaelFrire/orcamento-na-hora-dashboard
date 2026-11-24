@@ -15,12 +15,15 @@ export function ClientFormModal({
   open,
   onOpenChange,
   onSaved,
+  initial,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   onSaved: (c: Customer) => void
+  /** Valores iniciais (ex.: cliente sugerido pela IA). */
+  initial?: { name?: string; phone?: string }
 }) {
-  const [v, setV] = useState(blank)
+  const [v, setV] = useState({ ...blank, ...initial })
   const [errors, setErrors] = useState<Partial<typeof v & { form: string }>>({})
   const [saving, setSaving] = useState(false)
 

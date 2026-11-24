@@ -181,6 +181,57 @@ describe('gerador de orçamento', () => {
     expect(post.body).toEqual({ customerId: 'c2', items: [{ catalogItemId: 'p1', quantity: '3' }] })
   })
 
+  it('preenche o rascunho com IA, sinaliza o que veio da IA e só salva ao gerar', async () => {
+    const { calls, db } = installFakeApi()
+    renderApp('/orcamentos/novo')
+    await userEvent.type(await screen.findByLabelText('Pedido do cliente'), 'Marina quer 3 horas de consultoria e um drone')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+
+    // Cliente, item e observações preenchidos, com selo; nada salvo ainda.
+    expect(await screen.findByText('Marina Costa')).toBeInTheDocument()
+    expect(screen.getAllByText('Sugerido pela IA').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByLabelText('Quantidade de Consultoria técnica')).toHaveValue(3)
+    expect(screen.getByTestId('total').textContent).toMatch(/660,00/) // preço do catálogo, calculado no front
+    expect(screen.getByLabelText('Observações (sugerido pela IA)')).toHaveValue('Entrega até dia 10.')
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/organizations/org1/quotes')).toBe(false)
+    expect(db.aiDrafts).toHaveLength(1)
+
+    // Pendência bloqueia a geração até ser resolvida.
+    const pendencias = screen.getByRole('region', { name: 'Pendências da IA' })
+    expect(within(pendencias).getByText(/um drone/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar orçamento' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Resolva ou descarte')
+
+    await userEvent.click(within(pendencias).getByRole('button', { name: 'Descartar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar orçamento' }))
+    expect(await screen.findByText(/ORC-0003 gerado!/)).toBeInTheDocument()
+
+    const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/quotes'))!
+    expect(post.body).toEqual({ customerId: 'c1', aiDraftId: 'ai1', notes: 'Entrega até dia 10.', items: [{ catalogItemId: 'p1', quantity: '3' }] })
+  })
+
+  it('editar um campo da IA remove o selo e erro da IA mantém o formulário manual', async () => {
+    installFakeApi()
+    renderApp('/orcamentos/novo')
+    await userEvent.type(await screen.findByLabelText('Pedido do cliente'), 'quebrar')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('indisponível')
+    expect(screen.getByLabelText('Pesquisar cliente')).toBeInTheDocument()
+
+    await userEvent.clear(screen.getByLabelText('Pedido do cliente'))
+    await userEvent.type(screen.getByLabelText('Pedido do cliente'), 'Marina quer consultoria')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    await screen.findByLabelText('Quantidade de Consultoria técnica')
+    const before = screen.getAllByText('Sugerido pela IA').length
+    await userEvent.type(screen.getByLabelText('Observações (sugerido pela IA)'), ' ok')
+    expect(screen.getAllByText('Sugerido pela IA').length).toBe(before)
+    expect(screen.queryByLabelText('Observações (sugerido pela IA)')).not.toBeInTheDocument()
+    const qty = screen.getByLabelText('Quantidade de Consultoria técnica')
+    await userEvent.clear(qty)
+    await userEvent.type(qty, '4')
+    expect(screen.getAllByText('Sugerido pela IA').length).toBeLessThan(before)
+  })
+
   it('envia o orçamento ao cliente pelo WhatsApp, sem abrir outra janela', async () => {
     const db = makeDb()
     db.whatsapp.connection = { phoneNumberId: '1', wabaId: '2', displayPhone: '+55', verifiedName: 'A' }
