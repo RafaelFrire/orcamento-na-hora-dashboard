@@ -13,6 +13,8 @@ export interface PlanUsage {
   quotes: { used: number; limit: number }
   users: { used: number; limit: number }
   aiDrafts?: { used: number; limit: number }
+  /** Itens do catálogo enviados à IA por rascunho neste plano. */
+  aiCatalogItems?: number
 }
 
 export const planService = {

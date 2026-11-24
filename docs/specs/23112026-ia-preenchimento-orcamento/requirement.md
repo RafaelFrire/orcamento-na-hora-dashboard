@@ -101,7 +101,7 @@ Erros: `400` (texto inválido), `402` plano expirado ou cota de IA atingida (mes
 O catálogo da organização é a **fonte da verdade** e vai no prompt como contexto, **sem preços**:
 
 - Enviar por item: `id`, `name`, `description`, `unit`, `category` (apenas itens `active`).
-- Catálogos grandes: limite de contexto. Estratégia em duas etapas quando exceder o limite (ex.: > 300 itens):
+- Catálogos grandes: o limite de itens enviados é **por plano** (`maxAiCatalogItems`: Trial 50, Start 100, Middle 200, High 300). Acima dele:
   1. busca textual no catálogo (a mesma de `catalogService.items({ q })`) com termos extraídos do pedido;
   2. enviar ao modelo só os candidatos (top ~50) + o texto do pedido.
 - Clientes: enviar só os candidatos retornados por busca por nome/telefone (nunca a base inteira).
