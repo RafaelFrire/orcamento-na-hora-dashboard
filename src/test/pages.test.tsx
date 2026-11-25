@@ -127,6 +127,23 @@ describe('layout e dashboard', () => {
   })
 })
 
+describe('tema claro/escuro', () => {
+  it('a lua ao lado do sino alterna o tema e lembra a escolha', async () => {
+    installFakeApi()
+    renderApp('/')
+    await userEvent.click(await screen.findByRole('button', { name: 'Tema' }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: /Modo escuro/ }))
+    expect(document.documentElement).toHaveClass('dark')
+    expect(localStorage.getItem('onh:theme')).toBe('dark')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tema' }))
+    expect(await screen.findByRole('menuitemradio', { name: /Modo escuro/ })).toBeChecked()
+    await userEvent.click(screen.getByRole('menuitemradio', { name: /Modo claro/ }))
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(localStorage.getItem('onh:theme')).toBe('light')
+  })
+})
+
 describe('orçamentos', () => {
   it('lista da API e filtra por busca', async () => {
     installFakeApi()

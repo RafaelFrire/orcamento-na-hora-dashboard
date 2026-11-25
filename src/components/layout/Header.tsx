@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
+import { ThemeToggle } from './ThemeToggle'
 import { routeTitles } from '@/config/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { initials } from '@/lib/format'
@@ -45,6 +46,7 @@ export function Header() {
             className="bg-background pl-9"
           />
         </div>
+        <ThemeToggle />
         <button
           type="button"
           aria-label="Notificações"

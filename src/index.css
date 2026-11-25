@@ -2,6 +2,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Modo escuro: classe .dark no <html> (ver hooks/useTheme.ts). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -36,6 +39,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-gold-soft: var(--gold-soft);
   --color-success: var(--success);
+  --color-warning: var(--warning);
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -69,6 +73,41 @@
   --sidebar-ring: #c5a059;
   --gold-soft: #d9bd87;
   --success: #239b70;
+  --warning: #d99a2b;
+  color-scheme: light;
+}
+
+.dark {
+  --background: #121316;
+  --foreground: #ececea;
+  --card: #1b1d21;
+  --card-foreground: #ececea;
+  --popover: #1b1d21;
+  --popover-foreground: #ececea;
+  --primary: #c5a059;
+  --primary-foreground: #17191d;
+  --secondary: #25282d;
+  --secondary-foreground: #e9eaec;
+  --muted: #202226;
+  --muted-foreground: #9ba1a9;
+  --accent: #2b2720;
+  --accent-foreground: #f2ede0;
+  --destructive: #e5645f;
+  --border: #2c2f35;
+  --input: #363940;
+  --ring: #c5a059;
+  --sidebar: #0d0e10;
+  --sidebar-foreground: #e9eaec;
+  --sidebar-primary: #c5a059;
+  --sidebar-primary-foreground: #17191d;
+  --sidebar-accent: #1c1e22;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #24272c;
+  --sidebar-ring: #c5a059;
+  --gold-soft: #d9bd87;
+  --success: #34b88a;
+  --warning: #e0a63a;
+  color-scheme: dark;
 }
 
 @layer base {
