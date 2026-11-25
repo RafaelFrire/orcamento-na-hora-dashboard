@@ -524,6 +524,25 @@ describe('whatsapp', () => {
 })
 
 describe('conversas (inbox)', () => {
+  it('limpa a conversa depois da confirmação e mantém a conversa na lista', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/conversas')
+    expect(await screen.findByText('Bom dia! Preciso de um orçamento.')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /Limpar conversa/ }))
+    expect(await screen.findByText('Limpar esta conversa?')).toBeInTheDocument()
+    // Cancelar não apaga nada.
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: /Limpar conversa/ }))
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Limpar conversa' }))
+    await waitFor(() => expect(screen.queryByText('Bom dia! Preciso de um orçamento.')).not.toBeInTheDocument())
+    expect(calls.some((c) => c.method === 'DELETE' && c.path.endsWith('/whatsapp/conversations/v1/messages'))).toBe(true)
+    // A conversa continua na lista.
+    expect(within(screen.getByRole('region', { name: 'Lista de conversas' })).getByText('Carlos')).toBeInTheDocument()
+  })
+
   it('lista conversas, abre a primeira e marca como lida', async () => {
     const { calls, db } = installFakeApi()
     renderApp('/conversas')

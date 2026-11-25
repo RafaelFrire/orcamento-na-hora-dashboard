@@ -223,6 +223,12 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
     if (/^\/whatsapp\/conversations\/[^/]+\/messages\/[^/]+\/media$/.test(p) && method === 'GET')
       return new Response(new Blob(['conteudo']), { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
     const mm = p.match(/^\/whatsapp\/conversations\/([^/]+)\/messages$/)
+    if (mm && method === 'DELETE') {
+      db.messages[mm[1]] = []
+      const conv = db.conversations.find((c) => c.id === mm[1])
+      if (conv) { (conv as { lastMessageText: string | null }).lastMessageText = null; conv.unreadCount = 0 }
+      return json(null, 204)
+    }
     if (mm && method === 'GET') return json({ data: db.messages[mm[1]] ?? [], hasMore: false })
     if (mm && method === 'POST') {
       if (!db.whatsapp.connection) return err(409, 'CONFLICT', 'Conecte o WhatsApp antes de enviar mensagens')

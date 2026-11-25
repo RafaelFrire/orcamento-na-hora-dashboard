@@ -1,4 +1,4 @@
-import { MessagesSquare, Paperclip, Search, Send, Sparkles, UserPlus, X } from 'lucide-react'
+import { MessagesSquare, Paperclip, Search, Send, Sparkles, Trash2, UserPlus, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -8,8 +8,10 @@ import { ErrorNotice } from '@/components/shared/Pager'
 import { EmptyState, TableSkeleton } from '@/components/shared/States'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useAuth } from '@/contexts/AuthContext'
 import { errorMessage, useApi, useDebounced } from '@/hooks/useApi'
 import { ATTACHMENT_ACCEPT, formatFileSize, validateAttachment } from '@/lib/attachments'
 import { formatCurrency, formatMessageTime, formatQuoteNumber, initials } from '@/lib/format'
@@ -43,6 +45,11 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [confirmingClear, setConfirmingClear] = useState(false)
+  const { membership } = useAuth()
+  const toast = useToast()
+  // Limpar apaga o histórico e é irreversível: só dono e administrador.
+  const canClear = membership?.role === 'OWNER' || membership?.role === 'ADMIN'
   const fileInput = useRef<HTMLInputElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
@@ -93,6 +100,19 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
     }
   }
 
+  async function clearConversation() {
+    try {
+      await whatsappService.clear(id)
+      setOlder([])
+      setOlderHasMore(null)
+      messages.reload()
+      onChanged()
+      toast('Conversa limpa.')
+    } catch (err) {
+      setSendError(errorMessage(err))
+    }
+  }
+
   function pickFile(e: ChangeEvent<HTMLInputElement>) {
     const picked = e.target.files?.[0]
     e.target.value = ''
@@ -106,6 +126,7 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
     <section aria-label="Mensagens" className="bg-background flex min-h-0 flex-col">
       <div className="bg-card flex items-center justify-between gap-3 border-b px-5 py-3 font-medium">
         <span className="truncate">{displayName(conversation)}</span>
+        <div className="flex shrink-0 items-center gap-2">
         {/* A IA lê a conversa inteira (cliente e empresa) e monta o rascunho do orçamento. */}
         {list.length > 0 && (
           <Button asChild size="sm" variant="outline">
@@ -118,6 +139,10 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
         {conversation.customer && (
           <Button asChild size="sm" className="xl:hidden"><Link to="/orcamentos/novo" state={{ customer: conversation.customer }}>Gerar orçamento</Link></Button>
         )}
+        {canClear && list.length > 0 && (
+          <Button size="sm" variant="ghost" onClick={() => setConfirmingClear(true)}><Trash2 /> Limpar conversa</Button>
+        )}
+        </div>
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto p-5">
         {messages.error && <ErrorNotice message={messages.error} onRetry={messages.reload} />}
@@ -157,6 +182,14 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
         <Input aria-label="Mensagem" placeholder={file ? 'Legenda (opcional)' : 'Digite uma mensagem'} value={text} maxLength={file ? 1024 : 4096} onChange={(e) => setText(e.target.value)} />
         <Button type="submit" size="icon" aria-label="Enviar" disabled={sending || (!text.trim() && !file)}><Send className="size-4" /></Button>
       </form>
+      <ConfirmDialog
+        open={confirmingClear}
+        onOpenChange={setConfirmingClear}
+        title="Limpar esta conversa?"
+        description="Todas as mensagens e anexos desta conversa serão apagados do sistema. Isso não pode ser desfeito e não apaga nada no WhatsApp do cliente. O cliente e a conversa continuam na lista."
+        confirmLabel="Limpar conversa"
+        onConfirm={clearConversation}
+      />
     </section>
   )
 }

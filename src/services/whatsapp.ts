@@ -32,6 +32,8 @@ export const whatsappService = {
     ).message,
   media: (conversationId: string, messageId: string) =>
     http.blob(base(`/conversations/${conversationId}/messages/${messageId}/media`)),
+  /** Apaga o histórico de mensagens da conversa no sistema (não apaga nada no WhatsApp do cliente). */
+  clear: (id: string) => http.delete<void>(base(`/conversations/${id}/messages`)),
   markRead: (id: string) => http.post<void>(base(`/conversations/${id}/read`)),
   link: async (id: string, customerId: string | null) =>
     (await http.patch<{ conversation: Conversation }>(base(`/conversations/${id}`), { customerId })).conversation,
