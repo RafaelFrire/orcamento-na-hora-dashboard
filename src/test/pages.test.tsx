@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -232,6 +232,78 @@ describe('gerador de orçamento', () => {
     expect(screen.getAllByText('Sugerido pela IA').length).toBeLessThan(before)
   })
 
+  const convState = { customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina@costaarq.com.br' }, conversation: { id: 'v1', label: 'Marina Costa', key: 'k1' } }
+
+  it('a partir da conversa, a IA analisa tudo sozinha e o resultado fica salvo ao sair da página', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/orcamentos/novo', convState)
+
+    // Sem colar texto: a conversa inteira é enviada e o rascunho já aparece.
+    expect(await screen.findByLabelText('Quantidade de Consultoria técnica')).toHaveValue(3)
+    expect(screen.getByText('Mesma duração do pedido')).toBeInTheDocument()
+    const aiCalls = () => calls.filter((c) => c.method === 'POST' && c.path.endsWith('/quotes/ai-draft'))
+    expect(aiCalls()).toHaveLength(1)
+    expect(aiCalls()[0].body).toEqual({ conversationId: 'v1', customerId: 'c1', source: 'WHATSAPP' })
+    expect(localStorage.getItem('onh:ai:work:org1')).toContain('"aiDraftId":"ai1"')
+
+    // Sai da página e volta: nada é gerado de novo (sem novo custo).
+    cleanup()
+    renderApp('/orcamentos/novo', convState)
+    expect(await screen.findByLabelText('Quantidade de Consultoria técnica')).toHaveValue(3)
+    expect(screen.getByText('Rascunho da IA recuperado do navegador.')).toBeInTheDocument()
+    expect(aiCalls()).toHaveLength(1)
+  })
+
+  it('reaproveita do navegador a mesma entrada e só cobra de novo ao pedir "Gerar novamente"', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/orcamentos/novo')
+    const aiCalls = () => calls.filter((c) => c.method === 'POST' && c.path.endsWith('/quotes/ai-draft'))
+    const box = await screen.findByLabelText('Pedido do cliente')
+
+    await userEvent.type(box, 'pedido A')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    await screen.findByLabelText('Quantidade de Consultoria técnica')
+    await userEvent.clear(box)
+    await userEvent.type(box, 'pedido B')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    await waitFor(() => expect(aiCalls()).toHaveLength(2))
+
+    // Voltou ao pedido A: vem do cache local, sem chamar a API.
+    await userEvent.clear(box)
+    await userEvent.type(box, 'pedido A')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    expect(await screen.findByText(/sem novo custo de IA/)).toBeInTheDocument()
+    expect(aiCalls()).toHaveLength(2)
+
+    // Mesma entrada de novo = o dono quer outra tentativa: chama a API.
+    await userEvent.click(screen.getByRole('button', { name: /Gerar novamente/ }))
+    await waitFor(() => expect(aiCalls()).toHaveLength(3))
+  })
+
+  it('descartar o rascunho limpa o navegador e gerar o orçamento também', async () => {
+    installFakeApi()
+    renderApp('/orcamentos/novo', convState)
+    await screen.findByLabelText('Quantidade de Consultoria técnica')
+    expect(localStorage.getItem('onh:ai:work:org1')).not.toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Descartar rascunho' }))
+    expect(localStorage.getItem('onh:ai:work:org1')).toBeNull()
+    expect(screen.queryByLabelText('Quantidade de Consultoria técnica')).not.toBeInTheDocument()
+  })
+
+  it('mostra quando a quantidade veio do padrão do item e usa o padrão ao adicionar manualmente', async () => {
+    const db = makeDb()
+    ;(db.items[0] as { defaultQuantity?: string }).defaultQuantity = '4.000'
+    installFakeApi(db)
+    renderApp('/orcamentos/novo')
+    await userEvent.type(await screen.findByLabelText('Pesquisar no catálogo'), 'Consultoria')
+    await userEvent.click(await screen.findByRole('button', { name: /Adicionar Consultoria técnica/ }))
+    expect(screen.getByLabelText('Quantidade de Consultoria técnica')).toHaveValue(4)
+
+    await userEvent.type(screen.getByLabelText('Pedido do cliente'), 'item com padrao')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    expect(await screen.findByText('Padrão do item')).toBeInTheDocument()
+  })
+
   it('envia o orçamento ao cliente pelo WhatsApp, sem abrir outra janela', async () => {
     const db = makeDb()
     db.whatsapp.connection = { phoneNumberId: '1', wabaId: '2', displayPhone: '+55', verifiedName: 'A' }
@@ -315,6 +387,24 @@ describe('catálogo', () => {
     expect(await screen.findByText('Item de teste')).toBeInTheDocument()
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/catalog/items'))!
     expect(post.body).toMatchObject({ name: 'Item de teste', basePrice: '50.00', unit: 'UN', segmentId: 's1' })
+  })
+
+  it('cadastra item com quantidade padrão e valida o valor', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/catalogo')
+    await userEvent.click((await screen.findAllByRole('button', { name: '+ Adicionar item' }))[0])
+    await userEvent.type(screen.getByLabelText('Nome'), 'Pula-pula')
+    await userEvent.type(screen.getByLabelText('Preço'), '150')
+    await userEvent.selectOptions(screen.getByLabelText('Unidade'), 'HR')
+    await userEvent.type(screen.getByLabelText(/Quantidade padrão/), '0')
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(screen.getByText('Informe uma quantidade maior que zero.')).toBeInTheDocument()
+    await userEvent.clear(screen.getByLabelText(/Quantidade padrão/))
+    await userEvent.type(screen.getByLabelText(/Quantidade padrão/), '4')
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(await screen.findByText('Pula-pula')).toBeInTheDocument()
+    const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/catalog/items'))!
+    expect(post.body).toMatchObject({ name: 'Pula-pula', unit: 'HR', defaultQuantity: '4' })
   })
 
   it('importa itens de um modelo do nicho com preços ajustados', async () => {

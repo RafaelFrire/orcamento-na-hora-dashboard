@@ -56,8 +56,6 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, unreadCount])
 
-  // Últimas mensagens recebidas (até 4000 caracteres, o limite da IA).
-  const inboundText = list.filter((m) => m.direction === 'IN' && m.type === 'text' && m.body).map((m) => m.body).join('\n').slice(-4000)
   const lastId = list[list.length - 1]?.id
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' })
@@ -108,9 +106,13 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
     <section aria-label="Mensagens" className="bg-background flex min-h-0 flex-col">
       <div className="bg-card flex items-center justify-between gap-3 border-b px-5 py-3 font-medium">
         <span className="truncate">{displayName(conversation)}</span>
-        {/* Pedido do cliente (mensagens recebidas) vira rascunho de orçamento com IA. */}
-        {inboundText && (
-          <Button asChild size="sm" variant="outline"><Link to="/orcamentos/novo" state={{ customer: conversation.customer, aiText: inboundText }}><Sparkles /> Criar com IA</Link></Button>
+        {/* A IA lê a conversa inteira (cliente e empresa) e monta o rascunho do orçamento. */}
+        {list.length > 0 && (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/orcamentos/novo" state={{ customer: conversation.customer, conversation: { id: conversation.id, label: displayName(conversation), key: conversation.lastMessageAt } }}>
+              <Sparkles /> Criar com IA
+            </Link>
+          </Button>
         )}
         {/* Em telas estreitas o painel do cliente fica oculto: o atalho principal vem para o cabeçalho. */}
         {conversation.customer && (

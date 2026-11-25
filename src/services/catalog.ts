@@ -9,6 +9,8 @@ export interface CatalogItemInput {
   description?: string
   basePrice: string
   unit: string
+  /** Quantidade padrão (ou null para remover). */
+  defaultQuantity?: string | null
   active?: boolean
 }
 

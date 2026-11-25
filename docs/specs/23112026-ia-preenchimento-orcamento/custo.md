@@ -31,6 +31,6 @@ Cotas (`maxAiDrafts`) e limite de catálogo (`maxAiCatalogItems`) ficam em `src/
 
 ## O que faz o custo subir
 - Catálogo maior (principal fator): cada item soma ~50 tokens em toda chamada.
-- Pedidos longos (limite de 4.000 caracteres ≈ 1.000 tokens).
+- Pedidos longos (limite de 4.000 caracteres ≈ 1.000 tokens). **Conversa inteira:** até 6.000 caracteres ≈ 1.500 tokens de entrada por rascunho (mede ~1.100 a 1.200 tokens com conversa curta), ou seja, cerca de +US$ 0,0002 por rascunho.
 - Troca de modelo: modelos maiores custam várias vezes mais por token.
 - Tentativas repetidas (a API tenta de novo uma vez em 429/5xx; falhas não consomem cota do cliente).

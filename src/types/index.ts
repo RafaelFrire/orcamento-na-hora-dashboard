@@ -59,6 +59,8 @@ export interface CatalogItem {
   description: string | null
   basePrice: string
   unit: string
+  /** Quantidade usada quando o pedido não informa (ex.: brinquedo = 4 horas). */
+  defaultQuantity?: string | null
   active: boolean
   segment?: { id: string; name: string }
   category?: { id: string; name: string } | null
@@ -156,8 +158,10 @@ export interface Message {
 export interface AiDraftItem {
   catalogItemId: string
   name: string
-  /** null quando o pedido não informou a quantidade. */
+  /** null quando não há como saber (o dono preenche). */
   quantity: string | null
+  /** stated: dita · inferred: herdada do pedido · default: padrão do item · missing: falta informar. */
+  quantitySource: 'stated' | 'inferred' | 'default' | 'missing'
   unit: string
   confidence: number
   sourceText: string

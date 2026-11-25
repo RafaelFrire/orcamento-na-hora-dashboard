@@ -1,11 +1,12 @@
 import { AlertTriangle, CheckCircle2, Download, Eye, Plus, Search, Send, Trash2, UserPlus } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 import { ClientFormModal } from '@/components/shared/ClientFormModal'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SendQuoteModal } from '@/components/shared/SendQuoteModal'
-import { AiBadge, AiDraftBox } from '@/features/ai-quote/AiDraftBox'
+import { AiBadge, AiDraftBox, type AiDraftMeta } from '@/features/ai-quote/AiDraftBox'
+import { clearWork, dropCachedDraft, loadWork, saveWork, type WorkItem } from '@/features/ai-quote/aiStorage'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Textarea } from '@/components/ui/form'
@@ -21,20 +22,7 @@ import { quotesService } from '@/services/quotes'
 import { templateService } from '@/services/template'
 import type { AiDraftUnmatched, AiQuoteDraft, CatalogItem, ConversationCustomer, Quote } from '@/types'
 
-interface DraftItem {
-  key: string
-  catalogItemId: string
-  name: string
-  description: string
-  unit: string
-  basePrice: number
-  quantity: number
-  unitPrice: number
-  /** Veio da IA e ainda não foi conferido pelo dono. */
-  ai?: boolean
-  /** Baixa confiança: precisa de confirmação explícita. */
-  needsReview?: boolean
-}
+type DraftItem = WorkItem
 
 function SectionCard({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   return (
@@ -50,21 +38,29 @@ function SectionCard({ step, title, children }: { step: number; title: string; c
 
 export default function NewQuotePage() {
   const actions = useQuoteActions()
-  const navState = useLocation().state as { customer?: ConversationCustomer; aiText?: string } | null
+  const navState = useLocation().state as { customer?: ConversationCustomer; conversation?: { id: string; label: string; key: string } } | null
   const preset = navState?.customer ?? null
-  const [client, setClient] = useState<ConversationCustomer | null>(preset)
+  // Rascunho de IA salvo neste navegador (se o dono saiu da página e voltou), para não gerar de novo.
+  const restored = useMemo(() => {
+    const w = loadWork()
+    return w && (!navState?.conversation || w.conversationId === navState.conversation.id) ? w : null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const [client, setClient] = useState<ConversationCustomer | null>(restored?.client ?? preset)
   // --- Rascunho de IA: nada é salvo até o clique em "Gerar orçamento". ---
-  const [aiDraftId, setAiDraftId] = useState<string | null>(null)
-  const [clientFromAi, setClientFromAi] = useState(false)
-  const [notesFromAi, setNotesFromAi] = useState(false)
-  const [unmatched, setUnmatched] = useState<AiDraftUnmatched[]>([])
-  const [suggestedClient, setSuggestedClient] = useState<{ name: string; phone: string } | null>(null)
+  const [recovered, setRecovered] = useState(!!restored)
+  const [aiDraftId, setAiDraftId] = useState<string | null>(restored?.aiDraftId ?? null)
+  const [aiMeta, setAiMeta] = useState({ signature: restored?.signature ?? '', text: restored?.text ?? '' })
+  const [clientFromAi, setClientFromAi] = useState(restored?.clientFromAi ?? false)
+  const [notesFromAi, setNotesFromAi] = useState(restored?.notesFromAi ?? false)
+  const [unmatched, setUnmatched] = useState<AiDraftUnmatched[]>(restored?.unmatched ?? [])
+  const [suggestedClient, setSuggestedClient] = useState<{ name: string; phone: string } | null>(restored?.suggestedClient ?? null)
   const [suggestionKey, setSuggestionKey] = useState(0)
   const [clientQuery, setClientQuery] = useState('')
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [catalogQuery, setCatalogQuery] = useState('')
-  const [items, setItems] = useState<DraftItem[]>([])
-  const [notes, setNotes] = useState('')
+  const [items, setItems] = useState<DraftItem[]>(restored?.items ?? [])
+  const [notes, setNotes] = useState(restored?.notes ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [created, setCreated] = useState<Quote | null>(null)
@@ -84,13 +80,20 @@ export default function NewQuotePage() {
   const searchingClients = !!clientQuery.trim() && (clientSearch.loading || cq !== clientQuery.trim())
   const searchingCatalog = !!catalogQuery.trim() && (catalogSearch.loading || pq !== catalogQuery.trim())
 
+  // Guarda o trabalho com a IA no navegador a cada ajuste; some ao gerar o orçamento ou descartar.
+  useEffect(() => {
+    if (!aiDraftId || created) return
+    saveWork({ signature: aiMeta.signature, aiDraftId, conversationId: navState?.conversation?.id ?? restored?.conversationId, text: aiMeta.text, client, clientFromAi, suggestedClient, items, unmatched, notes, notesFromAi })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiDraftId, aiMeta, client, clientFromAi, suggestedClient, items, unmatched, notes, notesFromAi, created])
+
   const total = items.reduce((s, i) => s + lineTotal(i.quantity, i.unitPrice), 0)
 
   function addItem(p: CatalogItem) {
     const price = Number(p.basePrice)
     setItems((s) => [
       ...s,
-      { key: `${p.id}-${Date.now()}-${s.length}`, catalogItemId: p.id, name: p.name, description: p.description ?? '', unit: p.unit, basePrice: price, quantity: 1, unitPrice: price },
+      { key: `${p.id}-${Date.now()}-${s.length}`, catalogItemId: p.id, name: p.name, description: p.description ?? '', unit: p.unit, basePrice: price, quantity: p.defaultQuantity ? Number(p.defaultQuantity) : 1, unitPrice: price },
     ])
     setCatalogQuery('')
     setError('')
@@ -98,9 +101,10 @@ export default function NewQuotePage() {
 
   // Editar um campo equivale a conferi-lo: o selo da IA some.
   const patch = (key: string, p: Partial<DraftItem>) =>
-    setItems((s) => s.map((i) => (i.key === key ? { ...i, ai: false, needsReview: false, ...p } : i)))
+    setItems((s) => s.map((i) => (i.key === key ? { ...i, ai: false, needsReview: false, ...(p.quantity !== undefined ? { qtyHint: undefined } : {}), ...p } : i)))
 
-  async function applyDraft(draft: AiQuoteDraft, newDraftId: string) {
+  async function applyDraft(draft: AiQuoteDraft, meta: AiDraftMeta) {
+    const newDraftId = meta.aiDraftId
     // O servidor só devolve ids do catálogo; os preços vêm do catálogo (a IA nunca informa preço).
     const resolved = await Promise.all(
       draft.items.map(async (d) => {
@@ -122,13 +126,16 @@ export default function NewQuotePage() {
             unitPrice: Number(found.basePrice),
             ai: true,
             needsReview: d.confidence < 0.7,
+            qtyHint: d.quantitySource === 'inferred' || d.quantitySource === 'default' ? d.quantitySource : undefined,
           }]
         : [],
     )
 
     // Um novo rascunho substitui o anterior (o antigo é descartado para a auditoria).
-    if (aiDraftId) void aiService.discard(aiDraftId).catch(() => undefined)
+    if (aiDraftId && aiDraftId !== newDraftId) void aiService.discard(aiDraftId).catch(() => undefined)
     setAiDraftId(newDraftId)
+    setAiMeta({ signature: meta.signature, text: meta.text })
+    setRecovered(false)
     setItems(rows)
     setUnmatched([...draft.unmatched, ...lost])
     setNotes(draft.notes ?? '')
@@ -143,6 +150,22 @@ export default function NewQuotePage() {
       setSuggestedClient({ name: c.name, phone: c.phone ?? '' })
       setSuggestionKey((k) => k + 1)
     }
+    setError('')
+  }
+
+  /** Descarta o rascunho da IA (no servidor e no navegador) e volta ao preenchimento manual. */
+  function discardAi() {
+    if (aiDraftId) void aiService.discard(aiDraftId).catch(() => undefined)
+    clearWork()
+    if (aiMeta.signature) dropCachedDraft(aiMeta.signature)
+    setAiDraftId(null)
+    setAiMeta({ signature: '', text: '' })
+    setItems([])
+    setUnmatched([])
+    setNotes('')
+    setNotesFromAi(false)
+    setClientFromAi(false)
+    setSuggestedClient(null)
     setError('')
   }
 
@@ -167,6 +190,9 @@ export default function NewQuotePage() {
         })),
       })
       setCreated(quote)
+      // O rascunho virou orçamento: limpa o que ficou salvo no navegador.
+      clearWork()
+      if (aiMeta.signature) dropCachedDraft(aiMeta.signature)
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -198,7 +224,19 @@ export default function NewQuotePage() {
       <PageHeader title="Novo orçamento" description="Monte a proposta em poucos passos." />
       <div className="grid grid-cols-[1fr_320px] items-start gap-6">
         <div className="space-y-5">
-          <AiDraftBox initialText={navState?.aiText ?? ""} customerId={client?.id} source={navState?.aiText ? "WHATSAPP" : "MANUAL"} onDraft={applyDraft} />
+          <AiDraftBox
+            conversation={navState?.conversation}
+            initialText={restored?.text ?? ''}
+            customerId={client?.id}
+            autoRun={!!navState?.conversation && !restored}
+            onDraft={applyDraft}
+          />
+          {aiDraftId && (
+            <div role="status" className="text-muted-foreground flex items-center justify-between rounded-lg border border-dashed px-4 py-2 text-xs">
+              <span>{recovered ? 'Rascunho da IA recuperado do navegador.' : 'Rascunho da IA salvo neste navegador: se você sair da página, ele é mantido.'}</span>
+              <Button size="sm" variant="ghost" onClick={discardAi}>Descartar rascunho</Button>
+            </div>
+          )}
 
           <SectionCard step={1} title="Cliente">
             {client ? (
@@ -303,7 +341,10 @@ export default function NewQuotePage() {
                         )}
                         {i.ai && i.quantity === 0 && <p className="text-destructive mt-1 text-xs">O pedido não informou a quantidade.</p>}
                       </TD>
-                      <TD className="px-2"><Input type="number" min={0} step="any" aria-label={`Quantidade de ${i.name}`} value={i.quantity} onChange={(e) => patch(i.key, { quantity: Math.max(0, Number(e.target.value)) })} /></TD>
+                      <TD className="px-2">
+                        <Input type="number" min={0} step="any" aria-label={`Quantidade de ${i.name}`} value={i.quantity} onChange={(e) => patch(i.key, { quantity: Math.max(0, Number(e.target.value)) })} />
+                        {i.qtyHint && <p className="text-muted-foreground mt-1 text-xs">{i.qtyHint === 'inferred' ? 'Mesma duração do pedido' : 'Padrão do item'}</p>}
+                      </TD>
                       <TD className="text-muted-foreground px-2">{unitLabel(i.unit)}</TD>
                       <TD className="px-2"><Input type="number" min={0} step="0.01" aria-label={`Valor unitário de ${i.name}`} value={i.unitPrice} onChange={(e) => patch(i.key, { unitPrice: Math.max(0, Number(e.target.value)) })} /></TD>
                       <TD className="px-2 text-right font-medium">{formatCurrency(lineTotal(i.quantity, i.unitPrice))}</TD>

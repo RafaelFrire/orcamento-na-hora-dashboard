@@ -158,3 +158,9 @@ Nova tabela `ai_drafts` (por organização):
 7. Cota de IA do plano esgotada bloqueia a geração com mensagem clara (sem afetar o fluxo manual).
 8. Nada é salvo antes de **Gerar orçamento**; o rascunho é descartável.
 9. `aiDraftId` fica vinculado ao orçamento criado.
+
+## 11. Evolução (24/11/2026) — feedback do primeiro teste
+1. **Conversa inteira, sem colar texto.** `POST /quotes/ai-draft` aceita `conversationId`: a API lê as últimas mensagens (até 80 / 6.000 caracteres) como "Cliente:" e "Empresa:", usa o cliente vinculado à conversa e, sem cadastro, sugere o contato do WhatsApp como cliente novo. No dashboard, "Criar com IA" no Inbox abre o orçamento e a IA analisa sozinha. `text` vira observação extra do dono.
+2. **Análise mais inteligente (prompt 2026-11-24.2).** Vale o estado final do combinado (desistências e correções); cada item traz `quantitySource` (`stated` | `inferred` | `default` | `missing`). Duração/quantidade do pedido é herdada por itens da mesma unidade que fazem parte do mesmo evento (ex.: 2º brinquedo = mesmas 4 horas). Nunca adiciona itens que ninguém pediu e não completa datas.
+3. **Quantidade padrão por item.** `defaultQuantity` no catálogo (ex.: brinquedo = 4 h), editável na tela de catálogo. Sem quantidade no pedido, o **servidor** aplica o padrão (`quantitySource: "default"`); também pré-preenche ao adicionar o item manualmente.
+4. **Cache no navegador (localStorage, por organização, 48 h).** O rascunho em andamento é restaurado ao voltar à página; a mesma entrada (mesma conversa na mesma última mensagem, ou mesmo texto) reaproveita o resultado sem nova chamada. "Gerar novamente" com entrada idêntica chama a API (conta como novo rascunho). Gerar o orçamento ou "Descartar rascunho" limpa o cache.

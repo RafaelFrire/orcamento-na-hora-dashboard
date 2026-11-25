@@ -21,7 +21,7 @@ import { ApiError } from '@/services/api'
 import { catalogService } from '@/services/catalog'
 import type { CatalogItem } from '@/types'
 
-const blank = { name: '', description: '', segmentId: '', categoryId: '', price: '', unit: 'UN', active: true }
+const blank = { name: '', description: '', segmentId: '', categoryId: '', price: '', unit: 'UN', defaultQty: '', active: true }
 
 export default function CatalogPage() {
   const toast = useToast()
@@ -36,7 +36,7 @@ export default function CatalogPage() {
   const [importing, setImporting] = useState(false)
   const [deleting, setDeleting] = useState<CatalogItem | null>(null)
   const [form, setForm] = useState(blank)
-  const [errors, setErrors] = useState<{ name?: string; price?: string; segment?: string; form?: string }>({})
+  const [errors, setErrors] = useState<{ name?: string; price?: string; segment?: string; defaultQty?: string; form?: string }>({})
   const [saving, setSaving] = useState(false)
   const [newSegment, setNewSegment] = useState('')
   const q = useDebounced(search.trim())
@@ -73,6 +73,7 @@ export default function CatalogPage() {
             categoryId: p.categoryId ?? '',
             price: String(Number(p.basePrice)),
             unit: p.unit,
+            defaultQty: p.defaultQuantity ? String(Number(p.defaultQuantity)) : '',
             active: p.active,
           },
     )
@@ -100,6 +101,10 @@ export default function CatalogPage() {
     const price = toPriceString(form.price)
     if (price === null || !(Number(price) > 0)) n.price = 'Informe um preço maior que zero.'
     if (!form.segmentId) n.segment = 'Selecione ou crie um segmento.'
+    const qtyNumber = Number(form.defaultQty.replace(',', '.'))
+    const hasQty = form.defaultQty.trim() !== ''
+    if (hasQty && !(Number.isFinite(qtyNumber) && qtyNumber > 0)) n.defaultQty = 'Informe uma quantidade maior que zero.'
+    const defaultQty = hasQty && qtyNumber > 0 ? String(Number(qtyNumber.toFixed(3))) : null
     setErrors(n)
     if (Object.keys(n).length) return
 
@@ -109,6 +114,7 @@ export default function CatalogPage() {
       description: form.description.trim(),
       basePrice: price!,
       unit: form.unit,
+      defaultQuantity: defaultQty,
       active: form.active,
     }
     setSaving(true)
@@ -127,7 +133,8 @@ export default function CatalogPage() {
         setErrors({
           name: err.fieldMessage('name'),
           price: err.fieldMessage('basePrice'),
-          form: err.details.find((d) => !['name', 'basePrice'].includes(d.field ?? ''))?.message,
+          defaultQty: err.fieldMessage('defaultQuantity'),
+          form: err.details.find((d) => !['name', 'basePrice', 'defaultQuantity'].includes(d.field ?? ''))?.message,
         })
       else setErrors({ form: errorMessage(err) })
     } finally {
@@ -262,6 +269,10 @@ export default function CatalogPage() {
               </Select>
             </Field>
           </div>
+          <Field label={`Quantidade padrão (opcional, em ${unitLabel(form.unit)})`} htmlFor="p-defqty" error={errors.defaultQty}>
+            <Input id="p-defqty" type="number" min={0} step="any" placeholder="Ex.: 4" value={form.defaultQty} onChange={(e) => setForm({ ...form, defaultQty: e.target.value })} />
+            <p className="text-muted-foreground mt-1 text-xs">Usada quando o cliente não diz a quantidade (ex.: brinquedo = 4 horas). Fica preenchida ao adicionar o item e é aplicada pela IA.</p>
+          </Field>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" className="accent-primary size-4" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Item ativo
           </label>

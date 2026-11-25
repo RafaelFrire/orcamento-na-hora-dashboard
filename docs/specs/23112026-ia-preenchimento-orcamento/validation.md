@@ -36,4 +36,5 @@
 - [ ] Chave OpenAI de produção e confirmação dos termos de retenção/treino de dados.
 - [ ] Valores de `maxAiDrafts` por plano.
 - [ ] Texto de privacidade/LGPD atualizado.
-- [ ] Teste manual: pedido real do WhatsApp → rascunho → ajuste → orçamento → envio.
+- [ ] Teste manual: conversa real do WhatsApp → rascunho → ajuste → orçamento → envio.
+- [x] Teste real com a OpenAI (24/11): herança de duração, desistência de item, quantidade ausente, injeção de prompt e não inventar itens/datas.
