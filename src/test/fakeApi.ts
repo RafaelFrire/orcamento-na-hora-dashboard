@@ -58,7 +58,7 @@ const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
 const err = (status: number, code: string, message: string) => json({ error: { code, message } }, status)
 
-export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {}) {
+export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; plan?: Record<string, unknown> } = {}) {
   const calls: Call[] = []
   if (opts.authed !== false) {
     localStorage.setItem('onh:token', 'tok')
@@ -96,8 +96,11 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
     if (!m) return err(404, 'NOT_FOUND', 'Rota inexistente')
     const p = m[1]
 
+    if (p === '/subscription/checkout' && method === 'POST') {
+      return body.plan === 'BUSINESS' ? err(502, 'PAYMENT_UNAVAILABLE', 'Não foi possível falar com o Mercado Pago. Tente novamente.') : json({ checkoutUrl: 'https://mp.test/checkout/abc' })
+    }
     if (p === '/plan') {
-      return json({ plan: 'PROFESSIONAL', label: 'Professional', expired: false, trialEndsAt: null, daysLeft: null, periodStart: '2026-11-01T00:00:00.000Z', quotes: { used: 2, limit: 100 }, users: { used: 1, limit: 3 }, aiDrafts: { used: 4, limit: 60 }, catalogItems: { used: 12, limit: 150 } })
+      return json({ plan: 'PROFESSIONAL', label: 'Professional', subscription: { status: 'ACTIVE', currentPeriodEnd: '2026-12-20T00:00:00.000Z', graceEndsAt: null }, expired: false, trialEndsAt: null, daysLeft: null, periodStart: '2026-11-01T00:00:00.000Z', quotes: { used: 2, limit: 100 }, users: { used: 1, limit: 3 }, aiDrafts: { used: 4, limit: 60 }, catalogItems: { used: 12, limit: 150 }, ...opts.plan })
     }
     if (p === '/quotes/ai-draft' && method === 'POST') {
       if (String(body.text ?? '').includes('quebrar')) return err(502, 'AI_UNAVAILABLE', 'A IA está indisponível no momento. Tente novamente.')

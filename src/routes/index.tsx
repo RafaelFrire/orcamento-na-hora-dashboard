@@ -9,6 +9,7 @@ import DashboardPage from '@/pages/DashboardPage'
 import DocumentsPage from '@/pages/DocumentsPage'
 import NewQuotePage from '@/pages/NewQuotePage'
 import NotFoundPage from '@/pages/NotFoundPage'
+import PlanReturnPage from '@/pages/PlanReturnPage'
 import PlansPage from '@/pages/PlansPage'
 import QuotesPage from '@/pages/QuotesPage'
 import SettingsPage from '@/pages/SettingsPage'
@@ -32,6 +33,7 @@ export const routes: RouteObject[] = [
       { path: '/conversas', element: <ConversationsPage /> },
       { path: '/documentos', element: <DocumentsPage /> },
       { path: '/planos', element: <PlansPage /> },
+      { path: '/planos/retorno', element: <PlanReturnPage /> },
       { path: '/configuracoes', element: <SettingsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

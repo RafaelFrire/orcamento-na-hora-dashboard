@@ -1,12 +1,15 @@
 import { Check } from 'lucide-react'
+import { useState } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ErrorNotice } from '@/components/shared/Pager'
 import { TableSkeleton } from '@/components/shared/States'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { useApi } from '@/hooks/useApi'
+import { useToast } from '@/components/ui/toast'
+import { errorMessage, useApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/format'
+import { goTo } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { planService, type PlanOffer, type PlanUsage } from '@/services/plan'
 
@@ -61,7 +64,19 @@ function CurrentPlan({ usage }: { usage: PlanUsage }) {
   )
 }
 
-function PlanCard({ offer, current }: { offer: PlanOffer; current: boolean }) {
+function PlanCard({
+  offer,
+  current,
+  hasSubscription,
+  busy,
+  onSubscribe,
+}: {
+  offer: PlanOffer
+  current: boolean
+  hasSubscription: boolean
+  busy: boolean
+  onSubscribe: () => void
+}) {
   const { limits } = offer
   const facts = [
     limits.users === 1 ? '1 usuário' : `Até ${limits.users} usuários`,
@@ -93,9 +108,19 @@ function PlanCard({ offer, current }: { offer: PlanOffer; current: boolean }) {
             </li>
           ))}
         </ul>
-        <Button variant={offer.recommended ? 'default' : 'outline'} disabled>
-          {current ? 'Plano atual' : 'Assinatura em breve'}
-        </Button>
+        {current ? (
+          <Button variant='outline' disabled>
+            Plano atual
+          </Button>
+        ) : hasSubscription ? (
+          <Button variant='outline' disabled>
+            Troca de plano em breve
+          </Button>
+        ) : (
+          <Button variant={offer.recommended ? 'default' : 'outline'} disabled={busy} onClick={onSubscribe}>
+            {busy ? 'Abrindo checkout…' : `Assinar ${offer.label}`}
+          </Button>
+        )}
       </CardContent>
     </Card>
   )
@@ -104,6 +129,22 @@ function PlanCard({ offer, current }: { offer: PlanOffer; current: boolean }) {
 export default function PlansPage() {
   const usage = useApi(() => planService.get(), [])
   const offers = useApi(() => planService.offers(), [])
+  const toast = useToast()
+  const [busyPlan, setBusyPlan] = useState<string | null>(null)
+
+  async function subscribe(key: PlanOffer['key']) {
+    setBusyPlan(key)
+    try {
+      const { checkoutUrl } = await planService.checkout(key)
+      goTo(checkoutUrl)
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+      setBusyPlan(null)
+    }
+  }
+
+  const sub = usage.data?.subscription
+  const hasSubscription = !!sub && !['PENDING', 'EXPIRED'].includes(sub.status)
 
   return (
     <>
@@ -115,12 +156,19 @@ export default function PlansPage() {
       {offers.data && (
         <div className="grid gap-4 lg:grid-cols-3">
           {offers.data.map((o) => (
-            <PlanCard key={o.key} offer={o} current={usage.data?.plan === o.key} />
+            <PlanCard
+              key={o.key}
+              offer={o}
+              current={hasSubscription && usage.data?.plan === o.key}
+              hasSubscription={hasSubscription}
+              busy={busyPlan !== null}
+              onSubscribe={() => subscribe(o.key)}
+            />
           ))}
         </div>
       )}
       <p className="text-muted-foreground mt-4 text-sm">
-        A contratação online chega em breve. Enquanto isso, fale com a gente para trocar de plano.
+        Pagamento seguro pelo Mercado Pago. A troca e o cancelamento pela plataforma chegam em breve.
       </p>
     </>
   )

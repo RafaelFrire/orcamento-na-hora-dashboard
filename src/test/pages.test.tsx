@@ -2,8 +2,12 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { goTo } from '@/lib/navigation'
+
 import { installFakeApi, makeDb } from './fakeApi'
 import { renderApp } from './utils'
+
+vi.mock('@/lib/navigation', () => ({ goTo: vi.fn() }))
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -838,5 +842,45 @@ describe('planos', () => {
     expect(screen.getByText(/R\$\s*199,90/)).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: 'Itens no catálogo' })).toHaveAttribute('aria-valuenow', '12')
     expect(screen.getByRole('button', { name: 'Plano atual' })).toBeDisabled()
+  })
+})
+
+describe('assinatura', () => {
+  const trial = { plan: 'TRIAL', label: 'Trial', subscription: null }
+
+  it('assinar chama o checkout e redireciona ao Mercado Pago', async () => {
+    const { calls } = installFakeApi(undefined, { plan: trial })
+    renderApp('/planos')
+    await userEvent.click(await screen.findByRole('button', { name: 'Assinar Professional' }))
+    await waitFor(() => expect(goTo).toHaveBeenCalledWith('https://mp.test/checkout/abc'))
+    expect(calls.find((c) => c.path.endsWith('/subscription/checkout'))?.body).toEqual({ plan: 'PROFESSIONAL' })
+  })
+
+  it('mostra o erro do checkout e não redireciona', async () => {
+    installFakeApi(undefined, { plan: trial })
+    vi.mocked(goTo).mockClear()
+    renderApp('/planos')
+    await userEvent.click(await screen.findByRole('button', { name: 'Assinar Business' }))
+    expect(await screen.findByText(/Não foi possível falar com o Mercado Pago/)).toBeInTheDocument()
+    expect(goTo).not.toHaveBeenCalled()
+  })
+
+  it('com assinatura ativa não oferece nova contratação', async () => {
+    installFakeApi()
+    renderApp('/planos')
+    expect(await screen.findByRole('button', { name: 'Plano atual' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /^Assinar/ })).not.toBeInTheDocument()
+  })
+
+  it('tela de retorno confirma quando a assinatura fica ativa', async () => {
+    installFakeApi()
+    renderApp('/planos/retorno')
+    expect(await screen.findByText('Assinatura ativa!')).toBeInTheDocument()
+  })
+
+  it('tela de retorno aguarda enquanto o pagamento não foi confirmado', async () => {
+    installFakeApi(undefined, { plan: { subscription: undefined } })
+    renderApp('/planos/retorno')
+    expect(await screen.findByText('Confirmando pagamento…')).toBeInTheDocument()
   })
 })

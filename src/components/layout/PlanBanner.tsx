@@ -2,6 +2,7 @@ import { AlertTriangle, Sparkles } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
 import { useApi } from '@/hooks/useApi'
+import { formatDate } from '@/lib/format'
 import { planService, type PlanUsage } from '@/services/plan'
 
 /** Avisa do teste grátis e de cotas quase esgotadas; some quando está tudo tranquilo. */
@@ -9,6 +10,16 @@ function planNotice(plan: PlanUsage) {
   const { quotes } = plan
   const quotesLeft = Math.max(0, quotes.limit - quotes.used)
 
+  const sub = plan.subscription
+  if (plan.expired && sub && sub.status !== 'PENDING') {
+    return { tone: 'danger' as const, text: 'Sua assinatura não está ativa. Escolha um plano para voltar a gerar orçamentos.' }
+  }
+  if (sub?.status === 'PAST_DUE' && sub.graceEndsAt) {
+    return { tone: 'warning' as const, text: `Não conseguimos cobrar sua assinatura. Regularize até ${formatDate(sub.graceEndsAt)} para não perder o acesso.` }
+  }
+  if (sub?.status === 'CANCELING' && sub.currentPeriodEnd) {
+    return { tone: 'info' as const, text: `Assinatura cancelada. Seu acesso vai até ${formatDate(sub.currentPeriodEnd)}.` }
+  }
   if (plan.expired) {
     return { tone: 'danger' as const, text: 'Seu período de teste terminou. Escolha um plano para voltar a gerar orçamentos.' }
   }

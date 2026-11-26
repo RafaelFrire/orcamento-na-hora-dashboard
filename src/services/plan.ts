@@ -2,11 +2,14 @@ import { http, orgPath } from './api'
 
 export type PlanKey = 'TRIAL' | 'START' | 'PROFESSIONAL' | 'BUSINESS'
 
+export type SubscriptionStatus = 'PENDING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELING' | 'EXPIRED'
+
 export interface PlanUsage {
   plan: PlanKey
   label: string
   /** Trial vencido: criação de orçamentos e novos usuários ficam bloqueados. */
   expired: boolean
+  subscription?: { status: SubscriptionStatus; currentPeriodEnd: string | null; graceEndsAt: string | null } | null
   trialEndsAt: string | null
   daysLeft: number | null
   periodStart: string
@@ -32,4 +35,6 @@ export interface PlanOffer {
 export const planService = {
   get: () => http.get<PlanUsage>(orgPath('/plan')),
   offers: () => http.get<PlanOffer[]>('/plans'),
+  /** Inicia a assinatura; devolve o link do checkout do Mercado Pago. */
+  checkout: (plan: PlanOffer['key']) => http.post<{ checkoutUrl: string }>(orgPath('/subscription/checkout'), { plan }),
 }
