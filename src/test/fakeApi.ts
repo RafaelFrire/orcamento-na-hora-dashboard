@@ -23,9 +23,10 @@ export function makeDb() {
     { id: 'p1', segmentId: 's1', categoryId: 'k1', name: 'Consultoria técnica', description: 'Hora de consultoria', basePrice: '220.00', unit: 'HR', active: true, segment: { id: 's1', name: 'Serviços' }, category: { id: 'k1', name: 'Consultoria' } },
     { id: 'p2', segmentId: 's1', categoryId: null, name: 'Manutenção mensal', description: null, basePrice: '890.00', unit: 'UN', active: false, segment: { id: 's1', name: 'Serviços' }, category: null },
   ]
+  const state = { status: 'ACTIVE' as 'ACTIVE' | 'CANCELED', outcome: 'PENDING' as 'PENDING' | 'WON' | 'LOST', outcomeAt: null as string | null, canceledAt: null as string | null, cancelCategory: null as string | null, cancelReason: null as string | null }
   const quotes = [
-    { id: 'q2', number: 2, customerId: 'c2', customer: { id: 'c2', name: 'Carlos Pereira', phone: null, email: null }, notes: null, total: '3850.00', createdAt: '2026-11-16T12:00:00.000Z', validUntil: '2026-12-01T12:00:00.000Z', issuer: null, itemsCount: 2 },
-    { id: 'q1', number: 1, customerId: 'c1', customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: null }, notes: 'Obs', total: '660.00', createdAt: '2026-11-10T12:00:00.000Z', validUntil: '2026-11-25T12:00:00.000Z', issuer: null, itemsCount: 1 },
+    { ...state, outcome: 'WON' as const, outcomeAt: '2026-11-17T12:00:00.000Z', id: 'q2', number: 2, customerId: 'c2', customer: { id: 'c2', name: 'Carlos Pereira', phone: null, email: null }, notes: null, total: '3850.00', createdAt: '2026-11-16T12:00:00.000Z', validUntil: '2026-12-01T12:00:00.000Z', issuer: null, itemsCount: 2 },
+    { ...state, id: 'q1', number: 1, customerId: 'c1', customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: null }, notes: 'Obs', total: '660.00', createdAt: '2026-11-10T12:00:00.000Z', validUntil: '2026-11-25T12:00:00.000Z', issuer: null, itemsCount: 1 },
   ]
   const conversations = [
     { id: 'v1', waContactId: '5511987654321', contactName: 'Marina Costa', lastMessageAt: '2026-11-20T13:42:00.000Z', lastMessageText: 'Perfeito, pode enviar o orçamento!', unreadCount: 2, customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina@costaarq.com.br' } },
@@ -154,9 +155,61 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
       return json({ item }, 201)
     }
 
+    if (p === '/quotes/stats' && method === 'GET') {
+      const period = url.searchParams.get('period') ?? 'month'
+      const size = { day: 24, week: 7, month: 30, year: 12 }[period] ?? 30
+      const bucket = (key: string, label: string) => ({ key, label, count: 0, value: 0, wonCount: 0, wonValue: 0, lostCount: 0, lostValue: 0, pendingCount: 0, pendingValue: 0, canceledCount: 0, canceledValue: 0 })
+      const totals = bucket('total', 'Total')
+      const buckets = Array.from({ length: size }, (_, i) => bucket(String(i), String(i + 1)))
+      const last = buckets[size - 1]
+      const canceled = db.quotes.filter((x) => x.status === 'CANCELED')
+      for (const x of db.quotes) {
+        const v = Number(x.total)
+        for (const t of [last, totals]) {
+          if (x.status === 'CANCELED') { t.canceledCount += 1; t.canceledValue += v; continue }
+          t.count += 1; t.value += v
+          if (x.outcome === 'WON') { t.wonCount += 1; t.wonValue += v } else if (x.outcome === 'LOST') { t.lostCount += 1; t.lostValue += v } else { t.pendingCount += 1; t.pendingValue += v }
+        }
+      }
+      const decided = totals.wonCount + totals.lostCount
+      const issued = totals.count + totals.canceledCount
+      const byCategory = new Map<string, { category: string; count: number; value: number }>()
+      for (const x of canceled) {
+        const e = byCategory.get(x.cancelCategory ?? 'OTHER') ?? { category: x.cancelCategory ?? 'OTHER', count: 0, value: 0 }
+        e.count += 1; e.value += Number(x.total); byCategory.set(e.category, e)
+      }
+      return json({
+        period, from: '2026-10-01T03:00:00.000Z', buckets, totals,
+        closeRate: decided ? totals.wonCount / decided : null,
+        cancelRate: issued ? totals.canceledCount / issued : null,
+        cancellations: {
+          byCategory: [...byCategory.values()],
+          recent: canceled.map((x) => ({ id: x.id, number: x.number, customerName: x.customer.name, total: x.total, canceledAt: x.canceledAt, category: x.cancelCategory, reason: x.cancelReason })),
+        },
+      })
+    }
+    const cancelMatch = p.match(/^\/quotes\/([^/]+)\/cancel$/)
+    if (cancelMatch && method === 'POST') {
+      const quote = db.quotes.find((x) => x.id === cancelMatch[1])
+      if (!quote) return err(404, 'NOT_FOUND', 'Orçamento não encontrado')
+      if (quote.status === 'CANCELED') return err(409, 'CONFLICT', 'Este orçamento já foi cancelado')
+      if (!body.reason || body.reason.trim().length < 5) return err(400, 'VALIDATION_ERROR', 'Explique o motivo do cancelamento')
+      Object.assign(quote, { status: 'CANCELED', canceledAt: '2026-11-25T12:00:00.000Z', cancelCategory: body.category, cancelReason: body.reason })
+      return json({ quote })
+    }
+    const om = p.match(/^\/quotes\/([^/]+)\/outcome$/)
+    if (om && method === 'PATCH') {
+      const quote = db.quotes.find((x) => x.id === om[1])
+      if (!quote) return err(404, 'NOT_FOUND', 'Orçamento não encontrado')
+      if (quote.status === 'CANCELED') return err(409, 'CONFLICT', 'Orçamento cancelado não pode ser marcado como fechado')
+      Object.assign(quote, { outcome: body.outcome, outcomeAt: body.outcome === 'PENDING' ? null : '2026-11-25T12:00:00.000Z' })
+      return json({ quote })
+    }
     if (p === '/quotes' && method === 'GET') {
       const cid = url.searchParams.get('customerId')
-      return json(page(db.quotes.filter((x) => (!cid || x.customerId === cid) && (!q || x.customer.name.toLowerCase().includes(q) || `${x.number}` === q))))
+      const status = url.searchParams.get('status')
+      const outcome = url.searchParams.get('outcome')
+      return json(page(db.quotes.filter((x) => (!cid || x.customerId === cid) && (!status || x.status === status) && (!outcome || x.outcome === outcome) && (!q || x.customer.name.toLowerCase().includes(q) || `${x.number}` === q))))
     }
     if (p === '/quotes' && method === 'POST') {
       const c = db.customers.find((x) => x.id === body.customerId)!
@@ -165,7 +218,7 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
         const unitPrice = i.unitPrice ?? it.basePrice
         return { id: `qi${n}`, position: n + 1, catalogItemId: it.id, name: it.name, description: it.description, unit: it.unit, quantity: i.quantity, catalogUnitPrice: it.basePrice, unitPrice, subtotal: (Number(i.quantity) * Number(unitPrice)).toFixed(2) }
       })
-      const quote = { id: 'q3', number: 3, customerId: c.id, customer: c, notes: body.notes ?? null, total: lines.reduce((s: number, l: { subtotal: string }) => s + Number(l.subtotal), 0).toFixed(2), createdAt: '2026-11-20T12:00:00.000Z', validUntil: '2026-12-05T12:00:00.000Z', issuer: null, items: lines }
+      const quote = { status: 'ACTIVE', outcome: 'PENDING', outcomeAt: null, canceledAt: null, cancelCategory: null, cancelReason: null, id: 'q3', number: 3, customerId: c.id, customer: c, notes: body.notes ?? null, total: lines.reduce((s: number, l: { subtotal: string }) => s + Number(l.subtotal), 0).toFixed(2), createdAt: '2026-11-20T12:00:00.000Z', validUntil: '2026-12-05T12:00:00.000Z', issuer: null, items: lines }
       return json({ quote }, 201)
     }
     const sm = p.match(/^\/quotes\/([^/]+)\/send\/whatsapp$/)

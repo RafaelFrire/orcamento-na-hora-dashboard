@@ -169,6 +169,124 @@ describe('orçamentos', () => {
   })
 })
 
+describe('cancelamento e resultado do orçamento', () => {
+  async function openActions(number: string) {
+    await userEvent.click(await screen.findByRole('button', { name: `Ações de ${number}` }))
+  }
+
+  it('cancelar exige motivo e registra categoria e texto', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/orcamentos')
+    await openActions('ORC-0001')
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Cancelar orçamento/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar orçamento' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(/mínimo 5 caracteres/)
+    expect(calls.some((c) => c.path.endsWith('/cancel'))).toBe(false)
+
+    await userEvent.selectOptions(within(dialog).getByLabelText('Categoria'), 'DUPLICATE')
+    await userEvent.type(within(dialog).getByLabelText('Motivo do cancelamento'), 'Cotado em duplicidade')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar orçamento' }))
+
+    expect(await screen.findByText('ORC-0001 cancelado.')).toBeInTheDocument()
+    const post = calls.find((c) => c.path.endsWith('/quotes/q1/cancel'))!
+    expect(post.body).toEqual({ category: 'DUPLICATE', reason: 'Cotado em duplicidade' })
+    expect(await screen.findByText('Cancelado')).toBeInTheDocument()
+  })
+
+  it('orçamento cancelado não oferece fechar nem cancelar de novo e mostra o log no detalhe', async () => {
+    const db = makeDb()
+    Object.assign(db.quotes[1], { status: 'CANCELED', canceledAt: '2026-11-12T12:00:00.000Z', cancelCategory: 'WRONG_QUOTE', cancelReason: 'Cliente errado' })
+    installFakeApi(db)
+    renderApp('/orcamentos')
+    await openActions('ORC-0001')
+    expect(screen.queryByRole('menuitem', { name: /Cancelar orçamento/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Marcar como fechado/ })).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('menuitem', { name: /visualizar/i }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText(/Cancelado em 12\/11\/2026 · Cotação errada/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Cliente errado')).toBeInTheDocument()
+  })
+
+  it('marca como fechado, não fechado e volta para em aberto', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/orcamentos')
+    await openActions('ORC-0001')
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Marcar como fechado/ }))
+    expect(await screen.findByText('ORC-0001: fechado.')).toBeInTheDocument()
+    expect(calls.find((c) => c.method === 'PATCH' && c.path.endsWith('/quotes/q1/outcome'))!.body).toEqual({ outcome: 'WON' })
+
+    await openActions('ORC-0001')
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Marcar como não fechado/ }))
+    expect(await screen.findByText('ORC-0001: não fechado.')).toBeInTheDocument()
+
+    await openActions('ORC-0001')
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Voltar para em aberto/ }))
+    expect(await screen.findByText('ORC-0001: em aberto.')).toBeInTheDocument()
+  })
+
+  it('filtra a tabela por situação, inclusive cancelados', async () => {
+    const db = makeDb()
+    Object.assign(db.quotes[1], { status: 'CANCELED', cancelCategory: 'OTHER', cancelReason: 'Motivo qualquer' })
+    installFakeApi(db)
+    renderApp('/orcamentos')
+    expect(await screen.findByText('ORC-0001')).toBeInTheDocument()
+    expect(screen.getByText('ORC-0002')).toBeInTheDocument()
+
+    await userEvent.selectOptions(screen.getByLabelText('Filtrar por situação'), 'CANCELED')
+    await waitFor(() => expect(screen.queryByText('ORC-0002')).not.toBeInTheDocument())
+    expect(screen.getByText('ORC-0001')).toBeInTheDocument()
+
+    await userEvent.selectOptions(screen.getByLabelText('Filtrar por situação'), 'WON')
+    await waitFor(() => expect(screen.queryByText('ORC-0001')).not.toBeInTheDocument())
+    expect(screen.getByText('ORC-0002')).toBeInTheDocument()
+  })
+})
+
+describe('dashboard - evolução e cancelados', () => {
+  it('troca o período e a métrica do gráfico', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/')
+    await screen.findByRole('img', { name: /Quantidade de orçamentos — últimos 30 dias/ })
+    expect(screen.getAllByTestId('bar')).toHaveLength(30)
+
+    for (const [tab, bars, period] of [['Dia', 24, 'day'], ['Semana', 7, 'week'], ['Ano', 12, 'year']] as const) {
+      await userEvent.click(within(screen.getByRole('group', { name: 'Período' })).getByRole('button', { name: tab }))
+      await waitFor(() => expect(screen.getAllByTestId('bar')).toHaveLength(bars))
+      expect(calls.some((c) => c.path.endsWith('/quotes/stats'))).toBe(true)
+      expect(screen.getByRole('button', { name: tab })).toHaveAttribute('aria-pressed', 'true')
+      expect(period).toBeTruthy()
+    }
+
+    await userEvent.click(screen.getByRole('button', { name: 'Valor' }))
+    expect(await screen.findByRole('img', { name: /Valor de orçamentos/ })).toBeInTheDocument()
+  })
+
+  it('separa valor orçado de valor fechado e mostra a taxa de fechamento', async () => {
+    installFakeApi()
+    renderApp('/')
+    // ORC-0002 (R$ 3.850) fechado; ORC-0001 (R$ 660) em aberto.
+    expect(await screen.findByText('R$ 4.510,00')).toBeInTheDocument()
+    expect(screen.getByText('taxa de fechamento 100%')).toBeInTheDocument()
+    expect(screen.getByText(/1 orçamento sem retorno registrado/)).toBeInTheDocument()
+  })
+
+  it('cancelado sai das métricas e aparece no card de cancelados', async () => {
+    const db = makeDb()
+    Object.assign(db.quotes[1], { status: 'CANCELED', canceledAt: '2026-11-12T12:00:00.000Z', cancelCategory: 'WRONG_QUOTE', cancelReason: 'Cotado errado' })
+    installFakeApi(db)
+    renderApp('/')
+    const card = (await screen.findByRole('heading', { name: 'Orçamentos cancelados' })).closest('[data-slot=card]') as HTMLElement
+    expect(await within(card).findByText('Cotação errada')).toBeInTheDocument()
+    expect(within(card).getByText('Cotado errado')).toBeInTheDocument()
+    expect(within(card).getByText('50%')).toBeInTheDocument()
+    // O cancelado (R$ 660) não entra no valor orçado: só os R$ 3.850 do ORC-0002.
+    expect(await screen.findByText('soma dos orçamentos ativos')).toBeInTheDocument()
+    expect(screen.queryByText('R$ 4.510,00')).not.toBeInTheDocument()
+  })
+})
+
 describe('gerador de orçamento', () => {
   it('exige cliente e itens', async () => {
     installFakeApi()
