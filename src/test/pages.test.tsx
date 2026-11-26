@@ -827,3 +827,16 @@ describe('configurações', () => {
     expect(screen.getByLabelText('E-mail')).toHaveValue('rafael@acme.com')
   })
 })
+
+describe('planos', () => {
+  it('mostra o plano atual com uso e os três planos à venda', async () => {
+    installFakeApi()
+    renderApp('/planos')
+    expect(await screen.findByText('Minha recomendação')).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*59,90/)).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*99,90/)).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*199,90/)).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Itens no catálogo' })).toHaveAttribute('aria-valuenow', '12')
+    expect(screen.getByRole('button', { name: 'Plano atual' })).toBeDisabled()
+  })
+})

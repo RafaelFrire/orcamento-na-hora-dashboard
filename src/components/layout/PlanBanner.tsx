@@ -1,5 +1,5 @@
 import { AlertTriangle, Sparkles } from 'lucide-react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 import { useApi } from '@/hooks/useApi'
 import { planService, type PlanUsage } from '@/services/plan'
@@ -56,6 +56,9 @@ export function PlanBanner() {
     <div role="status" className={`flex items-center gap-2 px-8 py-2 text-sm ${toneClass[notice.tone]}`}>
       <Icon className="size-4 shrink-0" />
       <span>{notice.text}</span>
+      <Link to="/planos" className="ml-auto font-medium underline underline-offset-2">
+        Ver planos
+      </Link>
     </div>
   )
 }

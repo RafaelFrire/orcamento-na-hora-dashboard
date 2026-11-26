@@ -9,6 +9,7 @@ import DashboardPage from '@/pages/DashboardPage'
 import DocumentsPage from '@/pages/DocumentsPage'
 import NewQuotePage from '@/pages/NewQuotePage'
 import NotFoundPage from '@/pages/NotFoundPage'
+import PlansPage from '@/pages/PlansPage'
 import QuotesPage from '@/pages/QuotesPage'
 import SettingsPage from '@/pages/SettingsPage'
 import WhatsAppPage from '@/pages/WhatsAppPage'
@@ -30,6 +31,7 @@ export const routes: RouteObject[] = [
       { path: '/whatsapp', element: <WhatsAppPage /> },
       { path: '/conversas', element: <ConversationsPage /> },
       { path: '/documentos', element: <DocumentsPage /> },
+      { path: '/planos', element: <PlansPage /> },
       { path: '/configuracoes', element: <SettingsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

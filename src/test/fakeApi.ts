@@ -84,12 +84,20 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean } = {
     if (path === '/auth/logout') return json(null, 204)
     if (path === '/organizations' && method === 'POST') return json({ organization: { id: ORG, name: body.name, slug: 'acme' } }, 201)
 
+    if (path === '/plans') {
+      return json([
+        { key: 'START', label: 'Start', priceCents: 5990, tagline: 'Para autônomos.', recommended: false, limits: { users: 1, quotes: 40, aiDrafts: 20, catalogItems: 50 }, features: ['Geração de orçamentos'] },
+        { key: 'PROFESSIONAL', label: 'Professional', priceCents: 9990, tagline: 'Para fluxo recorrente.', recommended: true, limits: { users: 3, quotes: 100, aiDrafts: 60, catalogItems: 150 }, features: ['Suporte prioritário'] },
+        { key: 'BUSINESS', label: 'Business', priceCents: 19990, tagline: 'Para maior volume.', recommended: false, limits: { users: 5, quotes: 300, aiDrafts: 200, catalogItems: 500 }, features: ['Relatórios avançados'] },
+      ])
+    }
+
     const m = path.match(/^\/organizations\/org1(\/.*)$/)
     if (!m) return err(404, 'NOT_FOUND', 'Rota inexistente')
     const p = m[1]
 
     if (p === '/plan') {
-      return json({ plan: 'HIGH', label: 'High', expired: false, trialEndsAt: null, daysLeft: null, periodStart: '2026-11-01T00:00:00.000Z', quotes: { used: 2, limit: 500 }, users: { used: 1, limit: 5 } })
+      return json({ plan: 'PROFESSIONAL', label: 'Professional', expired: false, trialEndsAt: null, daysLeft: null, periodStart: '2026-11-01T00:00:00.000Z', quotes: { used: 2, limit: 100 }, users: { used: 1, limit: 3 }, aiDrafts: { used: 4, limit: 60 }, catalogItems: { used: 12, limit: 150 } })
     }
     if (p === '/quotes/ai-draft' && method === 'POST') {
       if (String(body.text ?? '').includes('quebrar')) return err(502, 'AI_UNAVAILABLE', 'A IA está indisponível no momento. Tente novamente.')
