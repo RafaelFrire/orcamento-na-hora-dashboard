@@ -557,7 +557,10 @@ describe('whatsapp', () => {
     await userEvent.click(screen.getByRole('button', { name: /Conectar WhatsApp/ }))
 
     expect(await screen.findByText('Conexão ativa')).toBeInTheDocument()
-    expect(screen.getByText('+55 11 4000-0000')).toBeInTheDocument()
+    // telefone e IDs aparecem mascarados, só com os últimos dígitos
+    expect(screen.getByText('+•• •• ••••-0000')).toBeInTheDocument()
+    expect(screen.getByText('••••••••0400')).toBeInTheDocument()
+    expect(screen.getByText('•••••8777')).toBeInTheDocument()
     const put = calls.find((c) => c.method === 'PUT' && c.path.endsWith('/whatsapp/connection'))!
     expect(put.body).toEqual({ phoneNumberId: '100200300400', wabaId: '999888777', accessToken: 'EAAG-token-de-teste-com-mais-de-vinte' })
     // o token nunca é exibido de volta
@@ -584,6 +587,42 @@ describe('whatsapp', () => {
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Desconectar' }))
     expect(await screen.findByText('Conecte seu WhatsApp Business')).toBeInTheDocument()
     expect(db.whatsapp.connection).toBeNull()
+  })
+
+  it('mostra o passo a passo do token permanente ao conectar', async () => {
+    installFakeApi()
+    renderApp('/whatsapp')
+    const title = await screen.findByText('Como conseguir os dados (leva uns 10 minutos)')
+    const guide = title.closest('details')!
+    expect(guide).not.toHaveAttribute('open') // começa recolhido
+    await userEvent.click(title)
+    expect(guide).toHaveAttribute('open')
+    expect(screen.getByText('Gere um token que não expira')).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: /Usuários do sistema/ })
+    expect(link).toHaveAttribute('href', 'https://business.facebook.com/settings/system-users')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('avisa quando o token é inválido e leva à atualização das credenciais', async () => {
+    const db = makeDb()
+    db.whatsapp.connection = { phoneNumberId: '1', wabaId: '2', displayPhone: '+55', verifiedName: 'A', tokenStatus: 'INVALID' }
+    installFakeApi(db)
+    renderApp('/whatsapp')
+    expect(await screen.findByText(/O token do WhatsApp é inválido ou expirou/)).toBeInTheDocument()
+    // há dois botões (aviso e cabeçalho); o do aviso vem primeiro
+    await userEvent.click(screen.getAllByRole('button', { name: 'Atualizar credenciais' })[0])
+    expect(await screen.findByLabelText('Token de acesso')).toBeInTheDocument()
+  })
+
+  it('oferece o atalho para atualizar credenciais quando o envio falha por token inválido', async () => {
+    const db = makeDb()
+    db.whatsapp.connection = { phoneNumberId: '1', wabaId: '2', displayPhone: '+55', verifiedName: 'A', tokenStatus: 'INVALID' }
+    installFakeApi(db)
+    renderApp('/conversas')
+    await userEvent.type(await screen.findByLabelText('Mensagem'), 'Olá')
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    expect(await screen.findByText('O token do WhatsApp expirou')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Atualizar credenciais do WhatsApp' })).toHaveAttribute('href', '/whatsapp')
   })
 })
 

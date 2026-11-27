@@ -40,7 +40,7 @@ export function makeDb() {
     ],
     v2: [{ id: 'm3', direction: 'IN', type: 'text', body: 'Obrigado, vou analisar.', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-19T16:20:00.000Z' }],
   }
-  const whatsapp = { connection: null as null | { phoneNumberId: string; wabaId: string; displayPhone: string; verifiedName: string } }
+  const whatsapp = { connection: null as null | { phoneNumberId: string; wabaId: string; displayPhone: string; verifiedName: string; tokenStatus?: 'OK' | 'INVALID' } }
   const documentConfig = null as null | Record<string, unknown>
   const aiDrafts: unknown[] = []
   const team = {
@@ -358,6 +358,7 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admi
     if (mm && method === 'GET') return json({ data: db.messages[mm[1]] ?? [], hasMore: false })
     if (mm && method === 'POST') {
       if (!db.whatsapp.connection) return err(409, 'CONFLICT', 'Conecte o WhatsApp antes de enviar mensagens')
+      if (db.whatsapp.connection.tokenStatus === 'INVALID') return err(502, 'WHATSAPP_TOKEN_INVALID', 'O token do WhatsApp expirou')
       const msg = { id: `m${Date.now()}`, direction: 'OUT' as const, type: 'text', body: body.text, status: 'SENT', errorMessage: null, sentAt: '2026-11-20T14:00:00.000Z' }
       db.messages[mm[1]].push(msg)
       const conv = db.conversations.find((c) => c.id === mm[1])!

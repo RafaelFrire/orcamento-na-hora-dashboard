@@ -18,7 +18,7 @@ import { formatCurrency, formatMessageTime, formatQuoteNumber, initials } from '
 import { cn } from '@/lib/utils'
 import { customersService } from '@/services/customers'
 import { quotesService } from '@/services/quotes'
-import { whatsappService } from '@/services/whatsapp'
+import { isTokenInvalidError, whatsappService } from '@/services/whatsapp'
 import type { Conversation, Message } from '@/types'
 
 const displayName = (c: Conversation) => c.customer?.name ?? c.contactName ?? `+${c.waContactId}`
@@ -44,6 +44,7 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [tokenError, setTokenError] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [confirmingClear, setConfirmingClear] = useState(false)
   const { membership } = useAuth()
@@ -86,6 +87,7 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
     if ((!body && !file) || sending) return
     setSending(true)
     setSendError('')
+    setTokenError(false)
     try {
       if (file) await whatsappService.sendAttachment(id, file, body)
       else await whatsappService.send(id, body)
@@ -94,6 +96,7 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
       messages.reload()
       onChanged()
     } catch (err) {
+      setTokenError(isTokenInvalidError(err))
       setSendError(errorMessage(err))
     } finally {
       setSending(false)
@@ -167,7 +170,12 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
         ))}
         <div ref={bottom} />
       </div>
-      {sendError && <p role="alert" className="text-destructive bg-card border-t px-4 pt-2 text-xs">{sendError}</p>}
+      {sendError && (
+        <p role="alert" className="text-destructive bg-card border-t px-4 pt-2 text-xs">
+          {sendError}
+          {tokenError && <> <Link to="/whatsapp" className="font-medium underline">Atualizar credenciais do WhatsApp</Link></>}
+        </p>
+      )}
       {file && (
         <div className="bg-card flex items-center gap-2 border-t px-4 pt-3 text-xs">
           <Paperclip className="size-4 shrink-0" />

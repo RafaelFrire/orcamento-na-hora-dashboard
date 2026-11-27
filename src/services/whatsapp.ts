@@ -1,12 +1,17 @@
 import type { Conversation, Message, Paginated, WhatsappConnection } from '@/types'
 
-import { http, orgPath } from './api'
+import { ApiError, http, orgPath } from './api'
 
 export interface ConnectionInput {
   phoneNumberId: string
   wabaId: string
   accessToken: string
 }
+
+/** Código de erro devolvido pela API quando a Meta recusa o token de acesso da conexão. */
+export const WHATSAPP_TOKEN_INVALID = 'WHATSAPP_TOKEN_INVALID'
+
+export const isTokenInvalidError = (err: unknown) => err instanceof ApiError && err.code === WHATSAPP_TOKEN_INVALID
 
 const base = (path: string) => orgPath(`/whatsapp${path}`)
 

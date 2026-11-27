@@ -36,6 +36,14 @@ export const unitLabels: Record<string, string> = {
 export const unitCodes = Object.keys(unitLabels)
 export const unitLabel = (code: string) => unitLabels[code] ?? code.toLowerCase()
 
+/** Esconde os dígitos, deixando só os últimos `keep` para identificação. Mantém a pontuação ("+55 11 4000-0000" -> "+•• •• ••••-0000"). */
+export function maskDigits(value: string | null | undefined, keep = 4): string {
+  if (!value) return '—'
+  let seen = 0
+  const total = (value.match(/\d/g) ?? []).length
+  return value.replace(/\d/g, (d) => (++seen > total - keep ? d : '•'))
+}
+
 /** Mês (0-11) e ano de um ISO no fuso de São Paulo, como "2026-11". */
 export const monthKey = (iso: string) => {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(new Date(iso))

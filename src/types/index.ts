@@ -178,6 +178,8 @@ export interface WhatsappConnection {
   wabaId?: string
   displayPhone?: string | null
   verifiedName?: string | null
+  /** 'INVALID' quando a Meta recusou o token (expirado, revogado ou sem permissão). Ausente = sem problema conhecido. */
+  tokenStatus?: 'OK' | 'INVALID'
   webhook: { path: string; verifyTokenConfigured: boolean; appSecretConfigured: boolean }
 }
 
