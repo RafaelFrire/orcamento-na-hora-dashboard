@@ -59,11 +59,11 @@ export function makeDb() {
     existente: { type: 'INVITE', organizationName: 'Acme Serviços', email: 'ana@acme.com', name: 'Ana', hasAccount: true },
     reset: { type: 'RESET', organizationName: 'Acme Serviços', email: 'ana@acme.com', name: 'Ana', hasAccount: true },
   }
-  const adminOrgs = [{ id: 'org1', name: 'Acme Serviços', slug: 'acme', plan: 'PROFESSIONAL', planLabel: 'Professional', trialEndsAt: null, createdAt: '2026-11-01T12:00:00.000Z', seats: { active: 2, pending: 1, limit: 3 } }]
+  let adminOrgs: Array<Record<string, unknown> & { id: string; name: string; disabledAt: string | null }> = [{ id: 'org1', name: 'Acme Serviços', slug: 'acme', plan: 'PROFESSIONAL', planLabel: 'Professional', trialEndsAt: null, createdAt: '2026-11-01T12:00:00.000Z', disabledAt: null, subscriptionStatus: 'ACTIVE', quotesCount: 12, seats: { active: 2, pending: 1, limit: 3 } }]
   let adminTickets: Array<{ id: string; type: string; urgent: boolean; message: string | null; createdAt: string; organization: { id: string; name: string }; createdBy: { id: string; name: string; email: string } | null; target: { id: string; name: string; email: string } | null }> = [
     { id: 'tk1', type: 'REMOVE_MEMBER', urgent: true, message: 'Saiu da empresa', createdAt: '2026-11-25T12:00:00.000Z', organization: { id: 'org1', name: 'Acme Serviços' }, createdBy: { id: 'u1', name: 'Rafael Sousa', email: 'rafael@acme.com' }, target: { id: 'u2', name: 'Ana Souza', email: 'ana@acme.com' } },
   ]
-  return { team, invitations, adminOrgs, get adminTickets() { return adminTickets }, set adminTickets(v) { adminTickets = v }, aiDrafts, customers, segments, categories, items, quotes, conversations, messages, whatsapp, documentConfig }
+  return { team, invitations, get adminOrgs() { return adminOrgs }, set adminOrgs(v) { adminOrgs = v }, get adminTickets() { return adminTickets }, set adminTickets(v) { adminTickets = v }, aiDrafts, customers, segments, categories, items, quotes, conversations, messages, whatsapp, documentConfig }
 }
 
 /** Configuração de documentos como o backend devolve na primeira leitura (catálogo do sistema). */
@@ -118,8 +118,46 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admi
     // Admin da plataforma.
     if (path === '/admin/organizations' && method === 'GET') return json({ organizations: db.adminOrgs })
     if (path === '/admin/organizations' && method === 'POST') {
-      db.adminOrgs.unshift({ id: 'org9', name: body.name, slug: 'nova', plan: 'TRIAL', planLabel: 'Teste grátis', trialEndsAt: null, createdAt: '2026-11-26T12:00:00.000Z', seats: { active: 0, pending: 1, limit: 1 } })
+      db.adminOrgs.unshift({ id: 'org9', name: body.name, slug: 'nova', plan: 'TRIAL', planLabel: 'Teste grátis', trialEndsAt: null, createdAt: '2026-11-26T12:00:00.000Z', disabledAt: null, subscriptionStatus: null, quotesCount: 0, seats: { active: 0, pending: 1, limit: 1 } })
       return json({ organization: { id: 'org9', name: body.name }, invitation: { id: 'i9', email: body.ownerEmail, name: body.ownerName, role: 'OWNER', expiresAt: '2026-11-29T12:00:00.000Z' }, token: 'tok-novo-dono' }, 201)
+    }
+    if (path === '/admin/overview') {
+      return json({
+        organizations: { total: 3, disabled: 1, new30d: 2 },
+        users: { total: 7 },
+        plans: [{ plan: 'PROFESSIONAL', label: 'Professional', count: 2 }],
+        subscriptions: [{ status: 'ACTIVE', count: 2 }],
+        revenue: { mrrCents: 19980, atRiskCents: 0, received30dCents: 9990 },
+        activity30d: { quotes: 41, aiDrafts: 9 },
+        openTickets: 1,
+        trialsEnding: [{ id: 'org7', name: 'Gelo Frio', trialEndsAt: new Date(Date.now() + 2 * 86_400_000).toISOString() }],
+        pastDue: [],
+        recentPayments: [{ id: 'p1', amountCents: 9990, status: 'approved', paidAt: '2026-11-20T12:00:00.000Z', createdAt: '2026-11-20T12:00:00.000Z', planLabel: 'Professional', organization: { id: 'org1', name: 'Acme Serviços' } }],
+      })
+    }
+    if (path === '/admin/users') {
+      return json({ users: [{ id: 'u1', name: 'Rafael Sousa', email: 'rafael@acme.com', isPlatformAdmin: false, createdAt: '2026-11-01T12:00:00.000Z', lastAccessAt: '2026-11-25T12:00:00.000Z', memberships: [{ organizationId: 'org1', organizationName: 'Acme Serviços', role: 'OWNER', disabled: false }] }] })
+    }
+    if (path === '/admin/payments') {
+      return json({ payments: [{ id: 'p1', amountCents: 9990, status: 'approved', paidAt: '2026-11-20T12:00:00.000Z', createdAt: '2026-11-20T12:00:00.000Z', planLabel: 'Professional', organization: { id: 'org1', name: 'Acme Serviços' } }] })
+    }
+    if (path === '/admin/organizations/org1' && method !== 'POST') {
+      const org = db.adminOrgs.find((o) => o.id === 'org1')!
+      if (method === 'DELETE') {
+        db.adminOrgs = db.adminOrgs.filter((o) => o.id !== 'org1')
+        return json(null, 204)
+      }
+      if (method === 'PATCH') {
+        if (typeof body.name === 'string') org.name = body.name
+        if (typeof body.disabled === 'boolean') org.disabledAt = body.disabled ? '2026-11-26T12:00:00.000Z' : null
+      }
+      return json({
+        organization: {
+          id: 'org1', name: org.name, slug: 'acme', niche: null, plan: 'PROFESSIONAL', planLabel: 'Professional', trialEndsAt: null, disabledAt: org.disabledAt, createdAt: '2026-11-01T12:00:00.000Z',
+          subscription: { status: 'ACTIVE', plan: 'PROFESSIONAL', planLabel: 'Professional', priceCents: 9990, currentPeriodEnd: '2026-12-20T12:00:00.000Z', graceEndsAt: null, canceledAt: null, payments: [{ id: 'p1', amountCents: 9990, status: 'approved', paidAt: '2026-11-20T12:00:00.000Z', createdAt: '2026-11-20T12:00:00.000Z' }] },
+          usage: { members: 2, quotes: 12, customers: 5, catalogItems: 20 },
+        },
+      })
     }
     if (path === '/admin/tickets' && method === 'GET') return json({ tickets: db.adminTickets })
     const adminRes = path.match(/^\/admin\/tickets\/([^/]+)\/resolve$/)

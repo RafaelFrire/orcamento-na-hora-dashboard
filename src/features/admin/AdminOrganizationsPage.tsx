@@ -1,22 +1,27 @@
-import { Building2, Loader2, Plus, Search } from 'lucide-react'
+import { Building2, Loader2, Plus, Power, PowerOff, Search, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ErrorNotice } from '@/components/shared/Pager'
 import { EmptyState, TableSkeleton } from '@/components/shared/States'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Modal } from '@/components/ui/dialog'
 import { Field, Select } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
+import { useToast } from '@/components/ui/toast'
 import { CopyLinkBox } from '@/features/team/CopyLinkBox'
 import { formatDate } from '@/features/team/labels'
 import { availableSegments } from '@/features/onboarding/segments'
 import { errorMessage, useApi, useDebounced } from '@/hooks/useApi'
-import { adminService } from '@/services/admin'
+import { adminService, type AdminOrganization } from '@/services/admin'
 import type { InviteResult } from '@/services/team'
+
+import { DeleteOrganizationModal } from './DeleteOrganizationModal'
+import { subscriptionLabel } from './labels'
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -24,6 +29,22 @@ export default function AdminOrganizationsPage() {
   const [q, setQ] = useState('')
   const debounced = useDebounced(q)
   const orgs = useApi(() => adminService.organizations(debounced), [debounced])
+  const toast = useToast()
+  const [toDelete, setToDelete] = useState<AdminOrganization | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  async function toggle(o: AdminOrganization) {
+    setBusy(o.id)
+    try {
+      await adminService.updateOrganization(o.id, { disabled: !o.disabledAt })
+      toast(o.disabledAt ? 'Empresa reativada.' : 'Empresa desativada.')
+      orgs.reload()
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
   const [open, setOpen] = useState(false)
   const [v, setV] = useState({ name: '', niche: '', ownerName: '', ownerEmail: '' })
   const [errors, setErrors] = useState<Partial<Record<keyof typeof v | 'form', string>>>({})
@@ -70,7 +91,7 @@ export default function AdminOrganizationsPage() {
     <>
       <PageHeader
         title="Empresas"
-        description="Crie empresas em trial e convide o proprietário."
+        description="Crie empresas, acompanhe o status e desative ou exclua quando necessário."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> Nova empresa
@@ -93,9 +114,12 @@ export default function AdminOrganizationsPage() {
             <THead>
               <TR>
                 <TH>Empresa</TH>
+                <TH>Status</TH>
                 <TH>Plano</TH>
                 <TH>Vagas</TH>
+                <TH>Orçamentos</TH>
                 <TH>Criada em</TH>
+                <TH className="text-right">Ações</TH>
               </TR>
             </THead>
             <TBody>
@@ -104,18 +128,47 @@ export default function AdminOrganizationsPage() {
                   <TD>
                     <Link to={`/admin/empresas/${o.id}`} className="font-medium underline-offset-4 hover:underline">{o.name}</Link>
                   </TD>
+                  <TD>
+                    {o.disabledAt ? (
+                      <Badge variant="destructive">Desativada</Badge>
+                    ) : o.subscriptionStatus === 'PAST_DUE' ? (
+                      <Badge variant="outline">{subscriptionLabel.PAST_DUE}</Badge>
+                    ) : (
+                      <Badge variant="secondary">Ativa</Badge>
+                    )}
+                  </TD>
                   <TD>{o.planLabel}</TD>
                   <TD>
                     {o.seats.active}
                     {o.seats.pending > 0 ? ` + ${o.seats.pending} pend.` : ''} / {o.seats.limit}
                   </TD>
+                  <TD>{o.quotesCount}</TD>
                   <TD>{formatDate(o.createdAt)}</TD>
+                  <TD className="text-right">
+                    <Button variant="ghost" size="sm" disabled={busy === o.id} onClick={() => toggle(o)} aria-label={`${o.disabledAt ? 'Reativar' : 'Desativar'} ${o.name}`}>
+                      {o.disabledAt ? <Power className="size-4" /> : <PowerOff className="size-4" />}
+                      {o.disabledAt ? 'Reativar' : 'Desativar'}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setToDelete(o)} aria-label={`Excluir ${o.name}`}>
+                      <Trash2 className="size-4" /> Excluir
+                    </Button>
+                  </TD>
                 </TR>
               ))}
             </TBody>
           </Table>
         )}
       </Card>
+
+      <DeleteOrganizationModal
+        org={toDelete}
+        onClose={() => setToDelete(null)}
+        onDeleted={() => {
+          toast('Empresa excluída.')
+          setToDelete(null)
+          orgs.reload()
+        }}
+      />
 
       <Modal
         open={open}

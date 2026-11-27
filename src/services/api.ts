@@ -130,7 +130,7 @@ export const http = {
   post: <T>(path: string, body?: unknown, auth = true) => json<T>('POST', path, { body: body ?? {}, auth }),
   patch: <T>(path: string, body?: unknown) => json<T>('PATCH', path, { body: body ?? {} }),
   put: <T>(path: string, body?: unknown) => json<T>('PUT', path, { body: body ?? {} }),
-  delete: <T>(path: string) => json<T>('DELETE', path),
+  delete: <T>(path: string, body?: unknown) => json<T>('DELETE', path, { body }),
   /** Envia um arquivo como corpo binário; os metadados vão na query. */
   upload: <T>(path: string, file: Blob, query?: Query) => json<T>('POST', path, { raw: file, query }),
   /** Baixa um binário autenticado (ex.: PDF). */

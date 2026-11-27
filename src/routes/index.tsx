@@ -4,7 +4,10 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { AdminLayout } from '@/features/admin/AdminLayout'
 import AdminOrganizationPage from '@/features/admin/AdminOrganizationPage'
 import AdminOrganizationsPage from '@/features/admin/AdminOrganizationsPage'
+import AdminOverviewPage from '@/features/admin/AdminOverviewPage'
+import AdminPaymentsPage from '@/features/admin/AdminPaymentsPage'
 import AdminTicketsPage from '@/features/admin/AdminTicketsPage'
+import AdminUsersPage from '@/features/admin/AdminUsersPage'
 import CatalogPage from '@/pages/CatalogPage'
 import ClientDetailPage from '@/pages/ClientDetailPage'
 import ClientsPage from '@/pages/ClientsPage'
@@ -29,8 +32,11 @@ export const routes: RouteObject[] = [
     path: '/admin',
     element: <AdminLayout />,
     children: [
-      { index: true, element: <AdminOrganizationsPage /> },
+      { index: true, element: <AdminOverviewPage /> },
+      { path: 'empresas', element: <AdminOrganizationsPage /> },
       { path: 'empresas/:id', element: <AdminOrganizationPage /> },
+      { path: 'usuarios', element: <AdminUsersPage /> },
+      { path: 'pagamentos', element: <AdminPaymentsPage /> },
       { path: 'chamados', element: <AdminTicketsPage /> },
     ],
   },

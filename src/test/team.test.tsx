@@ -154,11 +154,71 @@ describe('equipe do proprietário', () => {
 })
 
 describe('administração da plataforma', () => {
-  it('admin sem empresa cai em /admin e vê as empresas', async () => {
+  it('admin sem empresa cai em /admin e vê a visão geral com sidebar', async () => {
     installFakeApi(undefined, { admin: true })
     const router = renderApp('/')
     await waitFor(() => expect(router.state.location.pathname).toBe('/admin'))
+    expect(await screen.findByRole('heading', { name: 'Visão geral' })).toBeInTheDocument()
+    expect(screen.getByText('Receita recorrente (MRR)')).toBeInTheDocument()
+    expect(screen.getByText('Gelo Frio')).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Administração' })
+    for (const label of ['Visão geral', 'Empresas', 'Usuários', 'Pagamentos', 'Chamados']) {
+      expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
+    }
+  })
+
+  it('lista empresas com status e navega pelo sidebar', async () => {
+    installFakeApi(undefined, { admin: true })
+    const router = renderApp('/admin')
+    await userEvent.click(await screen.findByRole('link', { name: 'Empresas' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/empresas'))
     expect(await screen.findByText('Acme Serviços')).toBeInTheDocument()
+    expect(screen.getByText('Ativa')).toBeInTheDocument()
+  })
+
+  it('desativa e reativa a empresa pela lista', async () => {
+    const { calls } = installFakeApi(undefined, { admin: true })
+    renderApp('/admin/empresas')
+    await userEvent.click(await screen.findByRole('button', { name: 'Desativar Acme Serviços' }))
+    await waitFor(() => expect(calls.find((c) => c.method === 'PATCH' && c.path === '/admin/organizations/org1')?.body).toEqual({ disabled: true }))
+    expect(await screen.findByText('Desativada')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Reativar Acme Serviços' }))
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PATCH' && c.path === '/admin/organizations/org1')).toHaveLength(2))
+  })
+
+  it('exclui a empresa só depois de digitar o nome', async () => {
+    const { calls } = installFakeApi(undefined, { admin: true })
+    renderApp('/admin/empresas')
+    await userEvent.click(await screen.findByRole('button', { name: 'Excluir Acme Serviços' }))
+    const confirm = screen.getByRole('button', { name: /excluir definitivamente/i })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/digite/i), 'Acme Serviços')
+    expect(confirm).toBeEnabled()
+    await userEvent.click(confirm)
+    await waitFor(() => expect(calls.find((c) => c.method === 'DELETE' && c.path === '/admin/organizations/org1')?.body).toEqual({ confirmName: 'Acme Serviços' }))
+    expect(await screen.findByText('Nenhuma empresa')).toBeInTheDocument()
+  })
+
+  it('ficha da empresa mostra assinatura e uso, e edita o nome', async () => {
+    const { calls } = installFakeApi(undefined, { admin: true })
+    renderApp('/admin/empresas/org1')
+    expect(await screen.findByText('Plano e assinatura')).toBeInTheDocument()
+    expect(screen.getByText('Orçamentos')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /editar nome/i }))
+    const input = screen.getByLabelText('Nome da empresa')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Acme Novo')
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(calls.find((c) => c.method === 'PATCH' && c.path === '/admin/organizations/org1')?.body).toEqual({ name: 'Acme Novo' }))
+  })
+
+  it('lista usuários e pagamentos', async () => {
+    installFakeApi(undefined, { admin: true })
+    renderApp('/admin/usuarios')
+    expect(await screen.findByText('rafael@acme.com')).toBeInTheDocument()
+    cleanup()
+    renderApp('/admin/pagamentos')
+    expect(await screen.findByText('Aprovado')).toBeInTheDocument()
   })
 
   it('usuário comum em /admin é redirecionado', async () => {
@@ -169,7 +229,7 @@ describe('administração da plataforma', () => {
 
   it('cria empresa em trial e mostra o link do proprietário', async () => {
     const { calls } = installFakeApi(undefined, { admin: true })
-    renderApp('/admin')
+    renderApp('/admin/empresas')
     await userEvent.click(await screen.findByRole('button', { name: /nova empresa/i }))
     await userEvent.type(screen.getByLabelText('Nome da empresa'), 'Gelo Frio')
     await userEvent.selectOptions(screen.getByLabelText('Segmento'), 'refrigeracao-climatizacao')
@@ -201,6 +261,7 @@ describe('administração da plataforma', () => {
     const { calls } = installFakeApi(undefined, { admin: true })
     renderApp('/admin/empresas/org1')
     expect(await screen.findByText('Equipe da empresa')).toBeInTheDocument()
+    await screen.findByText('Ana Souza')
     const row = screen.getByText('Ana Souza').closest('tr')!
     await userEvent.click(within(row).getByRole('button', { name: /desativar/i }))
     await waitFor(() => expect(calls.some((c) => c.method === 'PATCH' && c.path === '/admin/organizations/org1/members/u2')).toBe(true))
