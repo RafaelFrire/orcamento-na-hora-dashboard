@@ -88,7 +88,7 @@ Uma empresa (organização) pode ter vários funcionários com acesso. O modelo 
 Sem "esqueci a senha" público (dependeria de e-mail). Quem esquecer abre contato com o responsável; o **dono pede** (chamado) e o **admin** gera um link de redefinição (`RESET`, uso único, 24h). Evolução: liberar o dono a gerar o reset dos próprios funcionários.
 
 ### 6.7 Bootstrap do primeiro `PLATFORM_ADMIN`
-Sem tela pública: script `npm run admin:create -- --email ...`, que imprime o link de definição de senha. Não existe rota para virar admin.
+Sem tela pública: script `npm run admin:create -- --email ... --name ... [--password ...]`. Sem `--password`, gera uma senha forte e a imprime uma única vez (não há link de definição para o admin). Se o e-mail já existe, apenas promove a conta. Não existe rota para virar admin.
 
 ## 7. Efeitos da assinatura
 - Trial/assinatura **vencidos**: dono não convida; chamados continuam podendo ser abertos; admin ainda atende remoções.

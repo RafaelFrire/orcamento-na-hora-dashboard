@@ -21,7 +21,7 @@ Fechadas (seção 4 do `requirement.md`). Antes de codar, conferir só: quem usa
 6. **Fechar o cadastro aberto**: remover `POST /auth/register`, `POST /organizations` e `POST /organizations/:orgId/members`; `admin.service.createOrganization` assume a criação (organização em `TRIAL` 7 dias + convite OWNER). Mover o seed do nicho/catálogo que hoje acontece no cadastro para essa criação. Tirar `ADMIN` do `requireRole` da rota de equipe.
 7. **Auth**: `/auth/me` e login devolvem `isPlatformAdmin`; admin sem vínculos é um login válido.
 8. **Job diário** (junto ao da assinatura): arquiva convites vencidos (a vaga já é liberada pela vigência).
-9. **Bootstrap**: `npm run admin:create`; documentar no README da API.
+9. **Bootstrap**: `npm run admin:create -- --email ... --name ... [--password ...]` (senha gerada e impressa uma vez quando omitida); documentar no README da API.
 
 ## Dashboard (este repo)
 10. Remover `RegisterPage` e links "criar conta" (login, rotas); `types` e `services/auth.ts` com `isPlatformAdmin`; `AuthContext` aceita login sem membership para admin e leva a `/admin`.

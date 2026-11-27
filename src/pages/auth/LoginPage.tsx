@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { AuthShell } from '@/components/layout/AuthShell'
 import { Button } from '@/components/ui/button'
@@ -42,7 +42,7 @@ export default function LoginPage() {
     }
   }
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to={user.isPlatformAdmin ? '/admin' : '/'} replace />
 
   return (
     <AuthShell>
@@ -64,19 +64,14 @@ export default function LoginPage() {
           <label className="flex items-center gap-2">
             <input type="checkbox" className="accent-primary size-4" /> Lembrar acesso
           </label>
-          <a href="#" className="text-foreground font-medium underline-offset-4 hover:underline">
-            Esqueci minha senha
-          </a>
+          <span className="text-muted-foreground text-xs">Esqueceu a senha? Peça um link ao responsável pela empresa.</span>
         </div>
         <Button type="submit" className="w-full" disabled={loading}>
           {loading && <Loader2 className="size-4 animate-spin" />} Entrar
         </Button>
       </form>
       <p className="text-muted-foreground mt-6 text-center text-sm">
-        Não tem uma conta?{' '}
-        <Link to="/cadastro" className="text-foreground font-medium underline-offset-4 hover:underline">
-          Criar conta
-        </Link>
+        Ainda não é cliente? Fale com nosso time comercial. Funcionários entram pelo link de convite enviado pela empresa.
       </p>
     </AuthShell>
   )

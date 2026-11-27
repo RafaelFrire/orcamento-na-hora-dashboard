@@ -1,6 +1,10 @@
 import { createBrowserRouter, type RouteObject } from 'react-router-dom'
 
 import { AppLayout } from '@/components/layout/AppLayout'
+import { AdminLayout } from '@/features/admin/AdminLayout'
+import AdminOrganizationPage from '@/features/admin/AdminOrganizationPage'
+import AdminOrganizationsPage from '@/features/admin/AdminOrganizationsPage'
+import AdminTicketsPage from '@/features/admin/AdminTicketsPage'
 import CatalogPage from '@/pages/CatalogPage'
 import ClientDetailPage from '@/pages/ClientDetailPage'
 import ClientsPage from '@/pages/ClientsPage'
@@ -14,12 +18,22 @@ import PlansPage from '@/pages/PlansPage'
 import QuotesPage from '@/pages/QuotesPage'
 import SettingsPage from '@/pages/SettingsPage'
 import WhatsAppPage from '@/pages/WhatsAppPage'
+import InvitePage from '@/pages/auth/InvitePage'
 import LoginPage from '@/pages/auth/LoginPage'
-import RegisterPage from '@/pages/auth/RegisterPage'
 
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
-  { path: '/cadastro', element: <RegisterPage /> },
+  // Não há cadastro público: contas nascem por convite.
+  { path: '/convite/:token', element: <InvitePage /> },
+  {
+    path: '/admin',
+    element: <AdminLayout />,
+    children: [
+      { index: true, element: <AdminOrganizationsPage /> },
+      { path: 'empresas/:id', element: <AdminOrganizationPage /> },
+      { path: 'chamados', element: <AdminTicketsPage /> },
+    ],
+  },
   {
     element: <AppLayout />,
     children: [
