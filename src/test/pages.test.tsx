@@ -14,21 +14,6 @@ afterEach(() => {
   localStorage.clear()
 })
 
-async function pickSegment() {
-  await userEvent.click(screen.getByRole('radio', { name: /Refrigeração e climatização/ }))
-  await userEvent.click(screen.getByRole('button', { name: 'Continuar' }))
-}
-
-async function fillRegister(email: string) {
-  await pickSegment()
-  await userEvent.type(screen.getByLabelText('Nome completo'), 'Rafael Sousa')
-  await userEvent.type(screen.getByLabelText('E-mail'), email)
-  await userEvent.type(screen.getByLabelText('Senha'), 'senha1234')
-  await userEvent.type(screen.getByLabelText('Confirmar senha'), 'senha1234')
-  await userEvent.type(screen.getByLabelText('Nome da empresa'), 'Acme')
-  await userEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
-}
-
 describe('autenticação', () => {
   it('rota protegida redireciona para o login sem sessão', async () => {
     installFakeApi(undefined, { authed: false })
@@ -64,49 +49,6 @@ describe('autenticação', () => {
     expect(localStorage.getItem('onh:organization')).toBe('org1')
   })
 
-  it('cadastro valida confirmação de senha', async () => {
-    installFakeApi(undefined, { authed: false })
-    renderApp('/cadastro')
-    await pickSegment()
-    await userEvent.type(screen.getByLabelText('Senha'), 'senha1234')
-    await userEvent.type(screen.getByLabelText('Confirmar senha'), 'outra1234')
-    await userEvent.click(screen.getByRole('button', { name: /criar minha conta/i }))
-    expect(screen.getByText('As senhas não coincidem.')).toBeInTheDocument()
-  })
-
-  it('cadastro começa pela escolha do segmento, com card de novidades', async () => {
-    installFakeApi(undefined, { authed: false })
-    renderApp('/cadastro')
-    expect(screen.getByText('Qual é o segmento da sua empresa?')).toBeInTheDocument()
-    expect(screen.getByLabelText('Novidades em breve')).toBeInTheDocument()
-    expect(screen.getAllByRole('radio')).toHaveLength(2)
-    expect(screen.getByRole('radio', { name: /Marcenaria e móveis planejados/ })).toBeInTheDocument()
-    const next = screen.getByRole('button', { name: 'Continuar' })
-    expect(next).toBeDisabled()
-    await userEvent.click(screen.getByRole('radio', { name: /Refrigeração e climatização/ }))
-    expect(next).toBeEnabled()
-    await userEvent.click(next)
-    expect(screen.getByLabelText('Nome da empresa')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /Alterar/ }))
-    expect(screen.getByRole('radio', { name: /Refrigeração e climatização/ })).toBeChecked()
-  })
-
-  it('cadastro cria conta, empresa e entra', async () => {
-    const { calls } = installFakeApi(undefined, { authed: false })
-    const router = renderApp('/cadastro')
-    await fillRegister('novo@x.com')
-    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
-    const sent = calls.map((c) => `${c.method} ${c.path}`)
-    expect(sent).toEqual(expect.arrayContaining(['POST /auth/register', 'POST /auth/login', 'POST /organizations']))
-    expect(calls.find((c) => c.path === '/organizations')?.body).toMatchObject({ name: 'Acme', niche: 'refrigeracao-climatizacao' })
-  })
-
-  it('cadastro com e-mail duplicado mostra erro no campo', async () => {
-    installFakeApi(undefined, { authed: false })
-    renderApp('/cadastro')
-    await fillRegister('dup@x.com')
-    expect(await screen.findByText('Este e-mail já está cadastrado.')).toBeInTheDocument()
-  })
 })
 
 describe('layout e dashboard', () => {

@@ -7,6 +7,8 @@ export interface User {
   id: string
   name: string
   email: string
+  /** Admin da plataforma: cria empresas e atende chamados (área /admin). */
+  isPlatformAdmin?: boolean
 }
 
 export interface Membership {

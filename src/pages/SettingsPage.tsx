@@ -9,6 +9,7 @@ import { Field, Textarea } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
 import { useAuth } from '@/contexts/AuthContext'
+import { TeamPanel } from '@/features/team/TeamPanel'
 import { errorMessage, useApi } from '@/hooks/useApi'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/services/api'
@@ -18,6 +19,7 @@ import type { QuoteTemplate } from '@/types'
 const sections = [
   { key: 'empresa', label: 'Empresa' },
   { key: 'perfil', label: 'Perfil' },
+  { key: 'equipe', label: 'Equipe' },
   { key: 'orcamento', label: 'Personalização de orçamento' },
 ] as const
 
@@ -116,7 +118,7 @@ export default function SettingsPage() {
       <PageHeader title="Configurações" description="Gerencie sua conta e preferências" />
       <div className="grid grid-cols-[240px_1fr] items-start gap-6">
         <nav aria-label="Seções de configurações" className="bg-card flex flex-col gap-1 rounded-xl border p-2">
-          {sections.map((s) => (
+          {sections.filter((s) => s.key !== 'equipe' || membership?.role === 'OWNER').map((s) => (
             <button key={s.key} type="button" aria-current={section === s.key ? 'page' : undefined} onClick={() => setSection(s.key)}
               className={cn('rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent', section === s.key && 'bg-accent border-l-2 border-primary')}>
               {s.label}
@@ -125,7 +127,9 @@ export default function SettingsPage() {
         </nav>
 
         <Card className="gap-5 p-8">
-          {section === 'perfil' ? (
+          {section === 'equipe' ? (
+            <TeamPanel />
+          ) : section === 'perfil' ? (
             <>
               <h2 className="text-lg font-semibold">Perfil</h2>
               <div className="grid grid-cols-2 gap-4">

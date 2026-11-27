@@ -5,6 +5,7 @@ import { initialConfig } from '@/features/documents/mocks'
 // API falsa em memória: responde ao fetch do cliente HTTP com os contratos do backend.
 const ORG = 'org1'
 export const user = { id: 'u1', name: 'Rafael Sousa', email: 'rafael@acme.com' }
+export const adminUser = { id: 'adm1', name: 'Admin Plataforma', email: 'admin@onh.com', isPlatformAdmin: true }
 export const membership = { organizationId: ORG, name: 'Acme Serviços', slug: 'acme', role: 'OWNER' as const }
 
 const page = (data: unknown[], pageSize = 20) => ({
@@ -42,7 +43,27 @@ export function makeDb() {
   const whatsapp = { connection: null as null | { phoneNumberId: string; wabaId: string; displayPhone: string; verifiedName: string } }
   const documentConfig = null as null | Record<string, unknown>
   const aiDrafts: unknown[] = []
-  return { aiDrafts, customers, segments, categories, items, quotes, conversations, messages, whatsapp, documentConfig }
+  const team = {
+    members: [
+      { userId: 'u1', name: 'Rafael Sousa', email: 'rafael@acme.com', role: 'OWNER', status: 'ACTIVE', disabledAt: null, lastAccessAt: '2026-11-25T12:00:00.000Z', removalRequested: false, createdAt: '2026-11-01T12:00:00.000Z' },
+      { userId: 'u2', name: 'Ana Souza', email: 'ana@acme.com', role: 'MEMBER', status: 'ACTIVE', disabledAt: null, lastAccessAt: null, removalRequested: false, createdAt: '2026-11-02T12:00:00.000Z' },
+    ],
+    invitations: [{ id: 'i1', name: 'Pendente', email: 'pend@acme.com', role: 'MEMBER', expiresAt: '2099-01-01T00:00:00.000Z', createdAt: '2026-11-25T12:00:00.000Z' }],
+    tickets: [],
+    seats: { used: 3, active: 2, pending: 1, limit: 3 },
+    plan: { key: 'PROFESSIONAL', label: 'Professional', expired: false },
+    audit: [],
+  }
+  const invitations: Record<string, { type: 'INVITE' | 'RESET'; organizationName: string; email: string; name: string; hasAccount: boolean }> = {
+    novo: { type: 'INVITE', organizationName: 'Acme Serviços', email: 'novo@acme.com', name: 'Novo Funcionário', hasAccount: false },
+    existente: { type: 'INVITE', organizationName: 'Acme Serviços', email: 'ana@acme.com', name: 'Ana', hasAccount: true },
+    reset: { type: 'RESET', organizationName: 'Acme Serviços', email: 'ana@acme.com', name: 'Ana', hasAccount: true },
+  }
+  const adminOrgs = [{ id: 'org1', name: 'Acme Serviços', slug: 'acme', plan: 'PROFESSIONAL', planLabel: 'Professional', trialEndsAt: null, createdAt: '2026-11-01T12:00:00.000Z', seats: { active: 2, pending: 1, limit: 3 } }]
+  let adminTickets: Array<{ id: string; type: string; urgent: boolean; message: string | null; createdAt: string; organization: { id: string; name: string }; createdBy: { id: string; name: string; email: string } | null; target: { id: string; name: string; email: string } | null }> = [
+    { id: 'tk1', type: 'REMOVE_MEMBER', urgent: true, message: 'Saiu da empresa', createdAt: '2026-11-25T12:00:00.000Z', organization: { id: 'org1', name: 'Acme Serviços' }, createdBy: { id: 'u1', name: 'Rafael Sousa', email: 'rafael@acme.com' }, target: { id: 'u2', name: 'Ana Souza', email: 'ana@acme.com' } },
+  ]
+  return { team, invitations, adminOrgs, get adminTickets() { return adminTickets }, set adminTickets(v) { adminTickets = v }, aiDrafts, customers, segments, categories, items, quotes, conversations, messages, whatsapp, documentConfig }
 }
 
 /** Configuração de documentos como o backend devolve na primeira leitura (catálogo do sistema). */
@@ -58,7 +79,7 @@ const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
 const err = (status: number, code: string, message: string) => json({ error: { code, message } }, status)
 
-export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; plan?: Record<string, unknown> } = {}) {
+export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admin?: boolean; plan?: Record<string, unknown> } = {}) {
   const calls: Call[] = []
   if (opts.authed !== false) {
     localStorage.setItem('onh:token', 'tok')
@@ -79,10 +100,40 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; plan
       if (body.password === 'senhaerrada') return err(401, 'UNAUTHENTICATED', 'Credenciais inválidas')
       return json({ token: 'tok', user, memberships: [membership] })
     }
-    if (path === '/auth/register') return body.email === 'dup@x.com' ? err(409, 'CONFLICT', 'E-mail já cadastrado') : json({ user }, 201)
-    if (path === '/auth/me') return json({ user, memberships: [membership] })
+    if (path === '/auth/me') return json({ user: opts.admin ? adminUser : user, memberships: opts.admin ? [] : [membership] })
     if (path === '/auth/logout') return json(null, 204)
-    if (path === '/organizations' && method === 'POST') return json({ organization: { id: ORG, name: body.name, slug: 'acme' } }, 201)
+
+    // Convite público (por token).
+    const inv = path.match(/^\/invitations\/([^/]+)(\/accept)?$/)
+    if (inv) {
+      const info = db.invitations[decodeURIComponent(inv[1])]
+      if (!info) return err(404, 'NOT_FOUND', 'Convite inválido ou expirado.')
+      if (inv[2] && method === 'POST') {
+        if (info.hasAccount && body.password === 'senhaerrada') return err(401, 'UNAUTHENTICATED', 'Credenciais inválidas')
+        return json({ token: 'tok', user, memberships: [membership] })
+      }
+      return json({ invitation: info })
+    }
+
+    // Admin da plataforma.
+    if (path === '/admin/organizations' && method === 'GET') return json({ organizations: db.adminOrgs })
+    if (path === '/admin/organizations' && method === 'POST') {
+      db.adminOrgs.unshift({ id: 'org9', name: body.name, slug: 'nova', plan: 'TRIAL', planLabel: 'Teste grátis', trialEndsAt: null, createdAt: '2026-11-26T12:00:00.000Z', seats: { active: 0, pending: 1, limit: 1 } })
+      return json({ organization: { id: 'org9', name: body.name }, invitation: { id: 'i9', email: body.ownerEmail, name: body.ownerName, role: 'OWNER', expiresAt: '2026-11-29T12:00:00.000Z' }, token: 'tok-novo-dono' }, 201)
+    }
+    if (path === '/admin/tickets' && method === 'GET') return json({ tickets: db.adminTickets })
+    const adminRes = path.match(/^\/admin\/tickets\/([^/]+)\/resolve$/)
+    if (adminRes && method === 'POST') {
+      db.adminTickets = db.adminTickets.filter((t) => t.id !== adminRes[1])
+      return json({ ticket: { id: adminRes[1], status: 'RESOLVED' } })
+    }
+    if (path === '/admin/organizations/org1/team') return json(db.team)
+    if (path === '/admin/organizations/org1/invitations' && method === 'POST') {
+      return json({ invitation: { id: 'i8', email: body.email, name: body.name, role: body.role, expiresAt: '2026-11-29T12:00:00.000Z' }, token: 'tok-admin-conv' }, 201)
+    }
+    const adminMember = path.match(/^\/admin\/organizations\/org1\/members\/([^/]+)(\/reset-access)?$/)
+    if (adminMember && method === 'PATCH') return json(db.team)
+    if (adminMember?.[2] && method === 'POST') return json({ token: 'tok-reset', expiresAt: '2026-11-27T12:00:00.000Z' }, 201)
 
     if (path === '/plans') {
       return json([
@@ -95,6 +146,17 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; plan
     const m = path.match(/^\/organizations\/org1(\/.*)$/)
     if (!m) return err(404, 'NOT_FOUND', 'Rota inexistente')
     const p = m[1]
+
+    // Equipe do proprietário.
+    if (p === '/team' && method === 'GET') return json(db.team)
+    if (p === '/invitations' && method === 'POST') {
+      if (body.email === 'cheio@x.com') return err(402, 'PLAN_LIMIT_REACHED', 'Limite de 3 usuário(s) do plano Professional atingido.')
+      return json({ invitation: { id: 'i7', email: body.email, name: body.name, role: 'MEMBER', expiresAt: '2026-11-29T12:00:00.000Z' }, token: 'tok-convite-novo' }, 201)
+    }
+    const invAct = p.match(/^\/invitations\/([^/]+)(\/regenerate)?$/)
+    if (invAct && method === 'POST') return json({ invitation: { id: invAct[1], email: 'pend@acme.com', name: 'Pendente', role: 'MEMBER', expiresAt: '2026-11-29T12:00:00.000Z' }, token: 'tok-regerado' })
+    if (invAct && method === 'DELETE') return json(null, 204)
+    if (p === '/tickets' && method === 'POST') return json({ ticket: { id: 't9', status: 'OPEN', ...body } }, 201)
 
     if (p === '/subscription/checkout' && method === 'POST') {
       return body.plan === 'BUSINESS' ? err(502, 'PAYMENT_UNAVAILABLE', 'Não foi possível falar com o Mercado Pago. Tente novamente.') : json({ checkoutUrl: 'https://mp.test/checkout/abc' })

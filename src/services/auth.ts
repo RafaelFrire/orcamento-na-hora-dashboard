@@ -7,13 +7,10 @@ export interface AuthSession {
   memberships: Membership[]
 }
 
+// Não há cadastro público: contas nascem por convite (ver services/team.ts).
 export const authService = {
-  register: (input: { name: string; email: string; password: string }) =>
-    http.post<{ user: User }>('/auth/register', input, false),
   login: (input: { email: string; password: string }) =>
     http.post<AuthSession & { token: string }>('/auth/login', input, false),
   me: () => http.get<AuthSession>('/auth/me'),
   logout: () => http.post<void>('/auth/logout'),
-  createOrganization: (name: string, niche?: string) =>
-    http.post<{ organization: { id: string; name: string; slug: string } }>('/organizations', { name, ...(niche ? { niche } : {}) }),
 }

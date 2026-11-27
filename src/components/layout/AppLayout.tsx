@@ -9,7 +9,7 @@ import { PlanBanner } from './PlanBanner'
 import { Sidebar } from './Sidebar'
 
 export function AppLayout() {
-  const { user, initializing } = useAuth()
+  const { user, membership, initializing } = useAuth()
   const location = useLocation()
 
   if (initializing) {
@@ -20,6 +20,8 @@ export function AppLayout() {
     )
   }
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  // Admin da plataforma sem empresa não tem o que operar no app: vai para a administração.
+  if (user.isPlatformAdmin && !membership) return <Navigate to="/admin" replace />
 
   return (
     <ToastProvider>

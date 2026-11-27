@@ -7,10 +7,12 @@ import type { Membership, User } from '@/types'
 interface AuthState {
   user: User | null
   membership: Membership | null
+  isPlatformAdmin: boolean
   /** true enquanto valida o token salvo ao abrir o app. */
   initializing: boolean
   login(email: string, password: string): Promise<void>
-  register(input: { name: string; email: string; password: string; company: string; niche?: string }): Promise<void>
+  /** Inicia a sessão a partir de uma resposta que já traz token (aceite de convite). */
+  startSession(res: AuthSession & { token: string }): void
   logout(): Promise<void>
 }
 
@@ -63,23 +65,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       membership,
+      isPlatformAdmin: !!user?.isPlatformAdmin,
       initializing,
       async login(email, password) {
         const res = await authService.login({ email, password })
         session.setToken(res.token)
-        if (res.memberships.length === 0) {
-          // Conta sem empresa (ex.: cadastro interrompido): não há onde trabalhar.
+        if (res.memberships.length === 0 && !res.user.isPlatformAdmin) {
+          // Sem empresa (acesso suspenso ou ainda sem vínculo): não há onde trabalhar.
           clear()
           throw new Error('NO_MEMBERSHIP')
         }
         apply(res)
       },
-      async register({ company, niche, ...account }) {
-        await authService.register(account)
-        const res = await authService.login({ email: account.email, password: account.password })
+      startSession(res) {
         session.setToken(res.token)
-        await authService.createOrganization(company, niche)
-        apply(await authService.me())
+        apply(res)
       },
       async logout() {
         try {
