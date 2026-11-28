@@ -79,7 +79,17 @@ export interface WorkSnapshot {
   unmatched: AiDraftUnmatched[]
   notes: string
   notesFromAi: boolean
+  details?: QuoteDetails
+  detailsFromAi?: boolean
   at: number
+}
+
+/** Dados do cliente/serviço extraídos pela IA e editáveis antes de gerar o orçamento. */
+export interface QuoteDetails {
+  document: string
+  email: string
+  address: string
+  schedule: string
 }
 
 export function loadWork(): WorkSnapshot | null {

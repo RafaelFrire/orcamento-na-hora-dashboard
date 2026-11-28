@@ -208,7 +208,9 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admi
       const quantitySource = body.conversationId ? 'inferred' : String(body.text ?? '').includes('padrao') ? 'default' : 'stated'
       return json({
         draft: {
-          customer: { status: 'matched', customerId: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', confidence: 0.95 },
+          customer: { status: 'matched', customerId: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina.obra@email.com', document: '529.982.247-25', confidence: 0.95 },
+          serviceAddress: 'Rua das Palmeiras, 120, apto 31',
+          schedule: 'sábado, dia 5, às 9h',
           items: [{ catalogItemId: 'p1', name: 'Consultoria técnica', quantity: '3', quantitySource, unit: 'HR', confidence: 0.92, sourceText: '3 horas de consultoria' }],
           unmatched: [{ text: 'um drone', reason: 'NO_CATALOG_MATCH', suggestions: [] }],
           notes: 'Entrega até dia 10.',

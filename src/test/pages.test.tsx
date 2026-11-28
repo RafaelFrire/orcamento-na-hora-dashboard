@@ -274,6 +274,11 @@ describe('gerador de orçamento', () => {
     expect(screen.getByLabelText('Quantidade de Consultoria técnica')).toHaveValue(3)
     expect(screen.getByTestId('total').textContent).toMatch(/660,00/) // preço do catálogo, calculado no front
     expect(screen.getByLabelText('Observações (sugerido pela IA)')).toHaveValue('Entrega até dia 10.')
+    // Dados do cliente e do serviço extraídos pela IA, editáveis.
+    expect(screen.getByLabelText('CPF/CNPJ')).toHaveValue('529.982.247-25')
+    expect(screen.getByLabelText('E-mail')).toHaveValue('marina.obra@email.com')
+    expect(screen.getByLabelText('Endereço do serviço')).toHaveValue('Rua das Palmeiras, 120, apto 31')
+    expect(screen.getByLabelText('Data e horário combinados')).toHaveValue('sábado, dia 5, às 9h')
     expect(calls.some((c) => c.method === 'POST' && c.path === '/organizations/org1/quotes')).toBe(false)
     expect(db.aiDrafts).toHaveLength(1)
 
@@ -288,7 +293,31 @@ describe('gerador de orçamento', () => {
     expect(await screen.findByText(/ORC-0003 gerado!/)).toBeInTheDocument()
 
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/quotes'))!
-    expect(post.body).toEqual({ customerId: 'c1', aiDraftId: 'ai1', notes: 'Entrega até dia 10.', items: [{ catalogItemId: 'p1', quantity: '3' }] })
+    expect(post.body).toEqual({
+      customerId: 'c1',
+      aiDraftId: 'ai1',
+      notes: 'Entrega até dia 10.',
+      customerDocument: '529.982.247-25',
+      customerEmail: 'marina.obra@email.com',
+      serviceAddress: 'Rua das Palmeiras, 120, apto 31',
+      scheduledFor: 'sábado, dia 5, às 9h',
+      items: [{ catalogItemId: 'p1', quantity: '3' }],
+    })
+  })
+
+  it('o dono corrige o endereço sugerido pela IA antes de gerar', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/orcamentos/novo')
+    await userEvent.type(await screen.findByLabelText('Pedido do cliente'), 'Marina quer 3 horas de consultoria e um drone')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    const address = await screen.findByLabelText('Endereço do serviço')
+    await userEvent.clear(address)
+    await userEvent.type(address, 'Av. Brasil, 800')
+    await userEvent.click(within(screen.getByRole('region', { name: 'Pendências da IA' })).getByRole('button', { name: 'Descartar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar orçamento' }))
+    expect(await screen.findByText(/ORC-0003 gerado!/)).toBeInTheDocument()
+    const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/quotes'))!
+    expect((post.body as { serviceAddress: string }).serviceAddress).toBe('Av. Brasil, 800')
   })
 
   it('editar um campo da IA remove o selo e erro da IA mantém o formulário manual', async () => {
