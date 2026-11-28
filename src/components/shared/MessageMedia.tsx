@@ -5,9 +5,10 @@ import { downloadBlob } from '@/services/files'
 import { whatsappService } from '@/services/whatsapp'
 import type { Message } from '@/types'
 
-/** Anexo de uma mensagem: imagens aparecem na hora; os demais tipos viram um botão de download. */
+/** Anexo de uma mensagem: imagens aparecem na hora, áudios viram um player; os demais tipos viram um botão de download. */
 export function MessageMedia({ conversationId, message }: { conversationId: string; message: Message }) {
   const isImage = message.type === 'image' || message.type === 'sticker'
+  const isAudio = message.type === 'audio'
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -16,7 +17,7 @@ export function MessageMedia({ conversationId, message }: { conversationId: stri
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isImage) return
+    if (!isImage && !isAudio) return
     let revoked = false
     let created: string | null = null
     whatsappService
@@ -31,7 +32,7 @@ export function MessageMedia({ conversationId, message }: { conversationId: stri
       revoked = true
       if (created) URL.revokeObjectURL(created)
     }
-  }, [conversationId, message.id, isImage])
+  }, [conversationId, message.id, isImage, isAudio])
 
   // PDFs só são carregados quando o usuário pede a prévia.
   useEffect(() => {
@@ -73,6 +74,14 @@ export function MessageMedia({ conversationId, message }: { conversationId: stri
       </a>
     ) : (
       <span className="bg-muted mb-1 block h-32 w-48 animate-pulse rounded-lg" aria-label="Carregando imagem" />
+    )
+  }
+
+  if (isAudio) {
+    return url ? (
+      <audio controls preload="metadata" src={url} aria-label="Ouvir áudio" className="mb-1 h-10 w-64 max-w-full" />
+    ) : (
+      <span className="bg-muted mb-1 block h-10 w-64 max-w-full animate-pulse rounded-full" aria-label="Carregando áudio" />
     )
   }
 

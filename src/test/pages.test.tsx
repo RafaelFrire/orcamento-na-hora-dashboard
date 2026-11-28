@@ -741,6 +741,34 @@ describe('conversas (inbox)', () => {
     expect(calls.some((c) => c.method === 'GET' && c.path.endsWith('/v1/messages/img1/media'))).toBe(true)
   })
 
+  it('mostra a transcrição do áudio recebido', async () => {
+    const db = makeDb()
+    db.messages.v1.push({ id: 'au1', direction: 'IN', type: 'audio', body: '[Áudio]', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:41:00.000Z', hasMedia: true, mediaMime: 'audio/ogg', mediaName: null, transcript: 'Quero higienizar dois ar-condicionados' })
+    const { calls } = installFakeApi(db)
+    URL.createObjectURL = vi.fn(() => 'blob:audio')
+    URL.revokeObjectURL = vi.fn()
+    renderApp('/conversas')
+    // O funcionário pode ouvir o áudio no próprio chat, sem baixar arquivo.
+    expect(await screen.findByLabelText('Ouvir áudio')).toHaveAttribute('src', 'blob:audio')
+    expect(calls.some((c) => c.method === 'GET' && c.path.endsWith('/v1/messages/au1/media'))).toBe(true)
+    expect(screen.queryByRole('button', { name: /Baixar/ })).not.toBeInTheDocument()
+    expect(await screen.findByText('Quero higienizar dois ar-condicionados')).toBeInTheDocument()
+    expect(screen.getByText('Transcrição')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Transcrever áudio/ })).not.toBeInTheDocument()
+  })
+
+  it('transcreve manualmente um áudio ainda sem texto', async () => {
+    const db = makeDb()
+    db.messages.v1.push({ id: 'au2', direction: 'IN', type: 'audio', body: '[Áudio]', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:41:00.000Z', hasMedia: true, mediaMime: 'audio/ogg', mediaName: null, transcript: null })
+    const { calls } = installFakeApi(db)
+    URL.createObjectURL = vi.fn(() => 'blob:audio')
+    URL.revokeObjectURL = vi.fn()
+    renderApp('/conversas')
+    await userEvent.click(await screen.findByRole('button', { name: /Transcrever áudio/ }))
+    expect(await screen.findByText('Quero orçamento de dois splits')).toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/v1/messages/au2/transcribe'))).toBe(true)
+  })
+
   it('mostra o erro do servidor quando o envio falha', async () => {
     installFakeApi() // sem conexão: a API responde 409
     renderApp('/conversas')

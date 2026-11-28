@@ -208,6 +208,8 @@ export interface Message {
   hasMedia: boolean
   mediaMime: string | null
   mediaName: string | null
+  /** Texto do áudio (voz → texto); null enquanto não transcrito. */
+  transcript?: string | null
 }
 
 // --- Rascunho de orçamento com IA ---
