@@ -922,3 +922,23 @@ describe('assinatura', () => {
     expect(await screen.findByText('Confirmando pagamento…')).toBeInTheDocument()
   })
 })
+
+describe('tour de boas-vindas', () => {
+  it('abre na primeira entrada, avança e pode ser pulado para não voltar', async () => {
+    installFakeApi(undefined, { tour: true })
+    renderApp('/')
+    expect(await screen.findByText('Bem-vindo ao Orçamento na Hora')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Próximo' }))
+    expect(screen.getByText('1. Cadastre seu catálogo')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Pular tour' }))
+    expect(screen.queryByText('1. Cadastre seu catálogo')).not.toBeInTheDocument()
+    expect(localStorage.getItem('product-tour-done:u1')).toBe('1')
+  })
+
+  it('o botão do cabeçalho reabre o tour', async () => {
+    installFakeApi()
+    renderApp('/')
+    await userEvent.click(await screen.findByRole('button', { name: 'Tour guiado' }))
+    expect(await screen.findByText('Bem-vindo ao Orçamento na Hora')).toBeInTheDocument()
+  })
+})

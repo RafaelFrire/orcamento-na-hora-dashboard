@@ -139,6 +139,7 @@ describe('equipe do proprietário', () => {
 
   it('funcionário não vê a aba Equipe', async () => {
     installFakeApi()
+    localStorage.setItem('product-tour-done:u2', '1')
     // sobrescreve a empresa ativa com papel MEMBER
     const real = globalThis.fetch
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {

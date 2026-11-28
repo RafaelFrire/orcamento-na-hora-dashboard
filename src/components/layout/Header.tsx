@@ -1,8 +1,9 @@
-import { Bell, ChevronRight, Search } from 'lucide-react'
+import { Bell, ChevronRight, CircleHelp, Search } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
+import { OPEN_TOUR_EVENT } from './ProductTour'
 import { ThemeToggle } from './ThemeToggle'
 import { routeTitles } from '@/config/navigation'
 import { useAuth } from '@/contexts/AuthContext'
@@ -47,6 +48,15 @@ export function Header() {
           />
         </div>
         <ThemeToggle />
+        <button
+          type="button"
+          aria-label="Tour guiado"
+          title="Rever o tour guiado"
+          onClick={() => window.dispatchEvent(new Event(OPEN_TOUR_EVENT))}
+          className="text-muted-foreground hover:bg-accent rounded-md p-2 transition-colors"
+        >
+          <CircleHelp className="size-5" />
+        </button>
         <button
           type="button"
           aria-label="Notificações"

@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 
 import { Header } from './Header'
 import { PlanBanner } from './PlanBanner'
+import { ProductTour } from './ProductTour'
 import { Sidebar } from './Sidebar'
 
 export function AppLayout() {
@@ -27,6 +28,7 @@ export function AppLayout() {
     <ToastProvider>
       <div className="relative flex h-screen overflow-hidden">
         <Sidebar />
+        <ProductTour />
         <div className="flex min-w-0 flex-1 flex-col">
           <Header />
           <PlanBanner />
