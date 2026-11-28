@@ -79,11 +79,13 @@ const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
 const err = (status: number, code: string, message: string) => json({ error: { code, message } }, status)
 
-export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admin?: boolean; plan?: Record<string, unknown> } = {}) {
+export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admin?: boolean; tour?: boolean; plan?: Record<string, unknown> } = {}) {
   const calls: Call[] = []
   if (opts.authed !== false) {
     localStorage.setItem('onh:token', 'tok')
     localStorage.setItem('onh:organization', ORG)
+    // O tour de boas-vindas cobriria a tela; só aparece quando o teste pede.
+    if (!opts.tour) localStorage.setItem('product-tour-done:' + user.id, '1')
   } else {
     localStorage.clear()
   }
