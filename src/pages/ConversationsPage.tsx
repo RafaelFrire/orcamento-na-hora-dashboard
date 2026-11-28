@@ -2,6 +2,7 @@ import { MessagesSquare, Paperclip, Search, Send, Sparkles, Trash2, UserPlus, X 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
+import { AudioTranscript } from '@/components/shared/AudioTranscript'
 import { MessageMedia } from '@/components/shared/MessageMedia'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ErrorNotice } from '@/components/shared/Pager'
@@ -159,6 +160,7 @@ function MessagePane({ conversation, onChanged }: { conversation: Conversation; 
           <div key={m.id} className={cn('flex', m.direction === 'OUT' && 'justify-end')}>
             <div className={cn('max-w-[70%] rounded-2xl px-3.5 py-2 text-sm shadow-sm', m.direction === 'OUT' ? 'bg-gold-soft/70 rounded-br-sm' : 'bg-card rounded-bl-sm')}>
               {m.hasMedia && <MessageMedia conversationId={id} message={m} />}
+              {m.type === 'audio' && <AudioTranscript conversationId={id} message={m} />}
               {(m.hasMedia ? captionOf(m) : m.body) && <span className="break-words whitespace-pre-wrap">{m.hasMedia ? captionOf(m) : m.body}</span>}
               <span className="text-muted-foreground mt-0.5 block text-right text-[10px]">
                 {formatMessageTime(m.sentAt)}

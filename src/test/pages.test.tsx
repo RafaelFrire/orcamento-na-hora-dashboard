@@ -274,6 +274,11 @@ describe('gerador de orçamento', () => {
     expect(screen.getByLabelText('Quantidade de Consultoria técnica')).toHaveValue(3)
     expect(screen.getByTestId('total').textContent).toMatch(/660,00/) // preço do catálogo, calculado no front
     expect(screen.getByLabelText('Observações (sugerido pela IA)')).toHaveValue('Entrega até dia 10.')
+    // Dados do cliente e do serviço extraídos pela IA, editáveis.
+    expect(screen.getByLabelText('CPF/CNPJ')).toHaveValue('529.982.247-25')
+    expect(screen.getByLabelText('E-mail')).toHaveValue('marina.obra@email.com')
+    expect(screen.getByLabelText('Endereço do serviço')).toHaveValue('Rua das Palmeiras, 120, apto 31')
+    expect(screen.getByLabelText('Data e horário combinados')).toHaveValue('sábado, dia 5, às 9h')
     expect(calls.some((c) => c.method === 'POST' && c.path === '/organizations/org1/quotes')).toBe(false)
     expect(db.aiDrafts).toHaveLength(1)
 
@@ -288,7 +293,31 @@ describe('gerador de orçamento', () => {
     expect(await screen.findByText(/ORC-0003 gerado!/)).toBeInTheDocument()
 
     const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/quotes'))!
-    expect(post.body).toEqual({ customerId: 'c1', aiDraftId: 'ai1', notes: 'Entrega até dia 10.', items: [{ catalogItemId: 'p1', quantity: '3' }] })
+    expect(post.body).toEqual({
+      customerId: 'c1',
+      aiDraftId: 'ai1',
+      notes: 'Entrega até dia 10.',
+      customerDocument: '529.982.247-25',
+      customerEmail: 'marina.obra@email.com',
+      serviceAddress: 'Rua das Palmeiras, 120, apto 31',
+      scheduledFor: 'sábado, dia 5, às 9h',
+      items: [{ catalogItemId: 'p1', quantity: '3' }],
+    })
+  })
+
+  it('o dono corrige o endereço sugerido pela IA antes de gerar', async () => {
+    const { calls } = installFakeApi()
+    renderApp('/orcamentos/novo')
+    await userEvent.type(await screen.findByLabelText('Pedido do cliente'), 'Marina quer 3 horas de consultoria e um drone')
+    await userEvent.click(screen.getByRole('button', { name: /Gerar rascunho/ }))
+    const address = await screen.findByLabelText('Endereço do serviço')
+    await userEvent.clear(address)
+    await userEvent.type(address, 'Av. Brasil, 800')
+    await userEvent.click(within(screen.getByRole('region', { name: 'Pendências da IA' })).getByRole('button', { name: 'Descartar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar orçamento' }))
+    expect(await screen.findByText(/ORC-0003 gerado!/)).toBeInTheDocument()
+    const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/quotes'))!
+    expect((post.body as { serviceAddress: string }).serviceAddress).toBe('Av. Brasil, 800')
   })
 
   it('editar um campo da IA remove o selo e erro da IA mantém o formulário manual', async () => {
@@ -739,6 +768,34 @@ describe('conversas (inbox)', () => {
     expect(await screen.findByAltText('[Imagem] Planta do local')).toHaveAttribute('src', 'blob:planta')
     expect(screen.getByText('Planta do local', { selector: 'span.break-words' })).toBeInTheDocument()
     expect(calls.some((c) => c.method === 'GET' && c.path.endsWith('/v1/messages/img1/media'))).toBe(true)
+  })
+
+  it('mostra a transcrição do áudio recebido', async () => {
+    const db = makeDb()
+    db.messages.v1.push({ id: 'au1', direction: 'IN', type: 'audio', body: '[Áudio]', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:41:00.000Z', hasMedia: true, mediaMime: 'audio/ogg', mediaName: null, transcript: 'Quero higienizar dois ar-condicionados' })
+    const { calls } = installFakeApi(db)
+    URL.createObjectURL = vi.fn(() => 'blob:audio')
+    URL.revokeObjectURL = vi.fn()
+    renderApp('/conversas')
+    // O funcionário pode ouvir o áudio no próprio chat, sem baixar arquivo.
+    expect(await screen.findByLabelText('Ouvir áudio')).toHaveAttribute('src', 'blob:audio')
+    expect(calls.some((c) => c.method === 'GET' && c.path.endsWith('/v1/messages/au1/media'))).toBe(true)
+    expect(screen.queryByRole('button', { name: /Baixar/ })).not.toBeInTheDocument()
+    expect(await screen.findByText('Quero higienizar dois ar-condicionados')).toBeInTheDocument()
+    expect(screen.getByText('Transcrição')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Transcrever áudio/ })).not.toBeInTheDocument()
+  })
+
+  it('transcreve manualmente um áudio ainda sem texto', async () => {
+    const db = makeDb()
+    db.messages.v1.push({ id: 'au2', direction: 'IN', type: 'audio', body: '[Áudio]', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:41:00.000Z', hasMedia: true, mediaMime: 'audio/ogg', mediaName: null, transcript: null })
+    const { calls } = installFakeApi(db)
+    URL.createObjectURL = vi.fn(() => 'blob:audio')
+    URL.revokeObjectURL = vi.fn()
+    renderApp('/conversas')
+    await userEvent.click(await screen.findByRole('button', { name: /Transcrever áudio/ }))
+    expect(await screen.findByText('Quero orçamento de dois splits')).toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/v1/messages/au2/transcribe'))).toBe(true)
   })
 
   it('mostra o erro do servidor quando o envio falha', async () => {

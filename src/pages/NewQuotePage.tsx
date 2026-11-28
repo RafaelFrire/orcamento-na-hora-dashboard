@@ -6,7 +6,7 @@ import { ClientFormModal } from '@/components/shared/ClientFormModal'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SendQuoteModal } from '@/components/shared/SendQuoteModal'
 import { AiBadge, AiDraftBox, type AiDraftMeta } from '@/features/ai-quote/AiDraftBox'
-import { clearWork, dropCachedDraft, loadWork, saveWork, type WorkItem } from '@/features/ai-quote/aiStorage'
+import { clearWork, dropCachedDraft, loadWork, saveWork, type QuoteDetails, type WorkItem } from '@/features/ai-quote/aiStorage'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Textarea } from '@/components/ui/form'
@@ -23,6 +23,12 @@ import { templateService } from '@/services/template'
 import type { AiDraftUnmatched, AiQuoteDraft, CatalogItem, ConversationCustomer, Quote } from '@/types'
 
 type DraftItem = WorkItem
+
+const EMPTY_DETAILS: QuoteDetails = { document: '', email: '', address: '', schedule: '' }
+const DOCUMENT_WARNINGS: Record<string, string> = {
+  DOCUMENT_INVALID: 'A IA encontrou um CPF/CNPJ, mas ele é inválido (dígitos errados ou faltando). Confira com o cliente.',
+  DOCUMENT_NOT_IN_TEXT: 'A IA sugeriu um CPF/CNPJ que o cliente não informou; ele foi descartado.',
+}
 
 function SectionCard({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   return (
@@ -61,6 +67,10 @@ export default function NewQuotePage() {
   const [catalogQuery, setCatalogQuery] = useState('')
   const [items, setItems] = useState<DraftItem[]>(restored?.items ?? [])
   const [notes, setNotes] = useState(restored?.notes ?? '')
+  // Dados do cliente e do serviço (só deste orçamento): a IA preenche, o dono confere.
+  const [details, setDetails] = useState<QuoteDetails>(restored?.details ?? EMPTY_DETAILS)
+  const [detailsFromAi, setDetailsFromAi] = useState(restored?.detailsFromAi ?? false)
+  const [detailsWarnings, setDetailsWarnings] = useState<string[]>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [created, setCreated] = useState<Quote | null>(null)
@@ -83,9 +93,14 @@ export default function NewQuotePage() {
   // Guarda o trabalho com a IA no navegador a cada ajuste; some ao gerar o orçamento ou descartar.
   useEffect(() => {
     if (!aiDraftId || created) return
-    saveWork({ signature: aiMeta.signature, aiDraftId, conversationId: navState?.conversation?.id ?? restored?.conversationId, text: aiMeta.text, client, clientFromAi, suggestedClient, items, unmatched, notes, notesFromAi })
+    saveWork({ signature: aiMeta.signature, aiDraftId, conversationId: navState?.conversation?.id ?? restored?.conversationId, text: aiMeta.text, client, clientFromAi, suggestedClient, items, unmatched, notes, notesFromAi, details, detailsFromAi })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiDraftId, aiMeta, client, clientFromAi, suggestedClient, items, unmatched, notes, notesFromAi, created])
+  }, [aiDraftId, aiMeta, client, clientFromAi, suggestedClient, items, unmatched, notes, notesFromAi, details, detailsFromAi, created])
+
+  const editDetail = (field: keyof QuoteDetails, value: string) => {
+    setDetails((d) => ({ ...d, [field]: value }))
+    setDetailsFromAi(false)
+  }
 
   const total = items.reduce((s, i) => s + lineTotal(i.quantity, i.unitPrice), 0)
 
@@ -141,6 +156,16 @@ export default function NewQuotePage() {
     setNotes(draft.notes ?? '')
     setNotesFromAi(!!draft.notes)
 
+    const found: QuoteDetails = {
+      document: draft.customer.document ?? '',
+      email: draft.customer.email ?? '',
+      address: draft.serviceAddress ?? '',
+      schedule: draft.schedule ?? '',
+    }
+    setDetails(found)
+    setDetailsFromAi(Object.values(found).some(Boolean))
+    setDetailsWarnings(draft.warnings.filter((w) => w in DOCUMENT_WARNINGS))
+
     const c = draft.customer
     setSuggestedClient(null)
     if (c.status === 'matched' && c.customerId && c.name) {
@@ -164,6 +189,9 @@ export default function NewQuotePage() {
     setUnmatched([])
     setNotes('')
     setNotesFromAi(false)
+    setDetails(EMPTY_DETAILS)
+    setDetailsFromAi(false)
+    setDetailsWarnings([])
     setClientFromAi(false)
     setSuggestedClient(null)
     setError('')
@@ -182,6 +210,10 @@ export default function NewQuotePage() {
         customerId: client.id,
         ...(aiDraftId ? { aiDraftId } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
+        ...(details.document.trim() ? { customerDocument: details.document.trim() } : {}),
+        ...(details.email.trim() ? { customerEmail: details.email.trim() } : {}),
+        ...(details.address.trim() ? { serviceAddress: details.address.trim() } : {}),
+        ...(details.schedule.trim() ? { scheduledFor: details.schedule.trim() } : {}),
         items: items.map((i) => ({
           catalogItemId: i.catalogItemId,
           quantity: i.quantity.toFixed(3).replace(/\.?0+$/, ''),
@@ -277,6 +309,30 @@ export default function NewQuotePage() {
               </div>
               </>
             )}
+
+            <div className="space-y-3 border-t pt-4">
+              <p className="flex items-center gap-2 text-sm font-medium">
+                Dados do cliente e do serviço {detailsFromAi && <AiBadge />}
+                <span className="text-muted-foreground text-xs font-normal">· valem só para este orçamento, o cadastro não muda</span>
+              </p>
+              {detailsWarnings.map((w) => (
+                <p key={w} role="alert" className="bg-warning/15 flex items-center gap-2 rounded-lg p-2 text-xs"><AlertTriangle className="size-3.5 shrink-0" /> {DOCUMENT_WARNINGS[w]}</p>
+              ))}
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="CPF/CNPJ" htmlFor="q-document">
+                  <Input id="q-document" inputMode="numeric" maxLength={30} placeholder="000.000.000-00" value={details.document} onChange={(e) => editDetail('document', e.target.value)} />
+                </Field>
+                <Field label="E-mail" htmlFor="q-email">
+                  <Input id="q-email" type="email" maxLength={160} placeholder={client?.email ?? 'cliente@email.com'} value={details.email} onChange={(e) => editDetail('email', e.target.value)} />
+                </Field>
+              </div>
+              <Field label="Endereço do serviço" htmlFor="q-address">
+                <Input id="q-address" maxLength={300} placeholder="Rua, número, complemento, bairro, cidade" value={details.address} onChange={(e) => editDetail('address', e.target.value)} />
+              </Field>
+              <Field label="Data e horário combinados" htmlFor="q-schedule">
+                <Input id="q-schedule" maxLength={120} placeholder="Ex.: sábado, dia 5, às 9h" value={details.schedule} onChange={(e) => editDetail('schedule', e.target.value)} />
+              </Field>
+            </div>
           </SectionCard>
 
           <SectionCard step={2} title="Produtos e serviços">

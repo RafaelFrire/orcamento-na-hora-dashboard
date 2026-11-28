@@ -152,7 +152,10 @@ export interface Quote {
   cancelCategory: QuoteCancelCategory | null
   cancelReason: string | null
   customerId: string
-  customer: { id: string; name: string; phone: string | null; email: string | null }
+  customer: { id: string; name: string; phone: string | null; email: string | null; document?: string | null }
+  /** Local do serviço e data/horário combinados; valem só para este orçamento. */
+  serviceAddress?: string | null
+  scheduledFor?: string | null
   notes: string | null
   total: string
   createdAt: string
@@ -208,6 +211,8 @@ export interface Message {
   hasMedia: boolean
   mediaMime: string | null
   mediaName: string | null
+  /** Texto do áudio (voz → texto); null enquanto não transcrito. */
+  transcript?: string | null
 }
 
 // --- Rascunho de orçamento com IA ---
@@ -237,8 +242,13 @@ export interface AiQuoteDraft {
     customerId: string | null
     name: string | null
     phone: string | null
+    /** Informados na conversa; valem só para o orçamento (não alteram o cadastro). */
+    email?: string | null
+    document?: string | null
     confidence: number
   }
+  serviceAddress?: string | null
+  schedule?: string | null
   items: AiDraftItem[]
   unmatched: AiDraftUnmatched[]
   notes: string | null

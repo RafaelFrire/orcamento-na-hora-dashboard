@@ -33,7 +33,7 @@ export function makeDb() {
     { id: 'v1', waContactId: '5511987654321', contactName: 'Marina Costa', lastMessageAt: '2026-11-20T13:42:00.000Z', lastMessageText: 'Perfeito, pode enviar o orçamento!', unreadCount: 2, customer: { id: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina@costaarq.com.br' } },
     { id: 'v2', waContactId: '5521999990000', contactName: 'Carlos', lastMessageAt: '2026-11-19T16:20:00.000Z', lastMessageText: 'Obrigado, vou analisar.', unreadCount: 0, customer: null as null | { id: string; name: string; phone: string | null; email: string | null } },
   ]
-  const messages: Record<string, Array<{ id: string; direction: 'IN' | 'OUT'; type: string; body: string; status: string; errorMessage: null; sentAt: string; hasMedia?: boolean; mediaMime?: string | null; mediaName?: string | null }>> = {
+  const messages: Record<string, Array<{ id: string; direction: 'IN' | 'OUT'; type: string; body: string; status: string; errorMessage: null; sentAt: string; hasMedia?: boolean; mediaMime?: string | null; mediaName?: string | null; transcript?: string | null }>> = {
     v1: [
       { id: 'm1', direction: 'IN', type: 'text', body: 'Bom dia! Preciso de um orçamento.', status: 'RECEIVED', errorMessage: null, sentAt: '2026-11-20T13:30:00.000Z' },
       { id: 'm2', direction: 'OUT', type: 'text', body: 'Qual a metragem?', status: 'READ', errorMessage: null, sentAt: '2026-11-20T13:35:00.000Z' },
@@ -208,7 +208,9 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admi
       const quantitySource = body.conversationId ? 'inferred' : String(body.text ?? '').includes('padrao') ? 'default' : 'stated'
       return json({
         draft: {
-          customer: { status: 'matched', customerId: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', confidence: 0.95 },
+          customer: { status: 'matched', customerId: 'c1', name: 'Marina Costa', phone: '(11) 98765-4321', email: 'marina.obra@email.com', document: '529.982.247-25', confidence: 0.95 },
+          serviceAddress: 'Rua das Palmeiras, 120, apto 31',
+          schedule: 'sábado, dia 5, às 9h',
           items: [{ catalogItemId: 'p1', name: 'Consultoria técnica', quantity: '3', quantitySource, unit: 'HR', confidence: 0.92, sourceText: '3 horas de consultoria' }],
           unmatched: [{ text: 'um drone', reason: 'NO_CATALOG_MATCH', suggestions: [] }],
           notes: 'Entrega até dia 10.',
@@ -383,6 +385,13 @@ export function installFakeApi(db: Db = makeDb(), opts: { authed?: boolean; admi
       const msg = { id: `a${Date.now()}`, direction: 'OUT' as const, type: 'document', body: caption || name, status: 'SENT', errorMessage: null, sentAt: '2026-11-20T14:05:00.000Z', hasMedia: true, mediaMime: url.searchParams.get('mime'), mediaName: name }
       db.messages[am[1]].push(msg)
       return json({ message: msg }, 201)
+    }
+    const tm = p.match(/^\/whatsapp\/conversations\/([^/]+)\/messages\/([^/]+)\/transcribe$/)
+    if (tm && method === 'POST') {
+      const msg = db.messages[tm[1]]?.find((x) => x.id === tm[2])
+      if (!msg) return err(404, 'NOT_FOUND', 'Áudio não encontrado')
+      msg.transcript = 'Quero orçamento de dois splits'
+      return json({ message: msg })
     }
     if (/^\/whatsapp\/conversations\/[^/]+\/messages\/[^/]+\/media$/.test(p) && method === 'GET')
       return new Response(new Blob(['conteudo']), { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
